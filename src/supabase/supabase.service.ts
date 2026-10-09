@@ -26,6 +26,18 @@ export class SupabaseService implements OnModuleInit {
     return this.adminClient;
   }
 
+  createAnonClient(): SupabaseClient {
+    const url = this.configService.getOrThrow<string>('supabase.url');
+    const anonKey = this.configService.getOrThrow<string>('supabase.anonKey');
+
+    return createClient(url, anonKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+  }
+
   getClientWithToken(accessToken: string): SupabaseClient {
     const url = this.configService.getOrThrow<string>('supabase.url');
     const anonKey = this.configService.getOrThrow<string>('supabase.anonKey');
