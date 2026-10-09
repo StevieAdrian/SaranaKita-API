@@ -8,6 +8,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { SupabaseAuthGuard } from './common/guards/supabase-auth.guard';
 import { SupabaseModule } from './supabase/supabase.module';
 import { UsersModule } from './modules/users/users.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { UsersModule } from './modules/users/users.module';
     }),
     SupabaseModule,
     UsersModule,
+    AuthModule,
   ],
   providers: [
     {
