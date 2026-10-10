@@ -25,6 +25,15 @@ class EnvironmentVariables {
 
   @IsString()
   SUPABASE_JWT_SECRET: string;
+
+  @IsString()
+  CLOUDINARY_CLOUD_NAME: string;
+
+  @IsString()
+  CLOUDINARY_API_KEY: string;
+
+  @IsString()
+  CLOUDINARY_API_SECRET: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
