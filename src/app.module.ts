@@ -10,6 +10,8 @@ import { SupabaseModule } from './supabase/supabase.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
+import { CloudinaryModule } from './cloudinary/cloudinary.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
   imports: [
@@ -19,9 +21,11 @@ import { CategoriesModule } from './modules/categories/categories.module';
       validate: validateEnv,
     }),
     SupabaseModule,
+    CloudinaryModule,
     UsersModule,
     AuthModule,
     CategoriesModule,
+    UploadsModule,
   ],
   providers: [
     {

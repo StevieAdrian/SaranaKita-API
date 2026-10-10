@@ -7,4 +7,9 @@ export default () => ({
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
     jwtSecret: process.env.SUPABASE_JWT_SECRET,
   },
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+    apiKey: process.env.CLOUDINARY_API_KEY,
+    apiSecret: process.env.CLOUDINARY_API_SECRET,
+  },
 });
