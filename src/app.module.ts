@@ -8,6 +8,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { SupabaseAuthGuard } from './common/guards/supabase-auth.guard';
 import { SupabaseModule } from './supabase/supabase.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { SchoolsModule } from './modules/schools/schools.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
@@ -24,6 +25,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     }),
     SupabaseModule,
     RolesModule,
+    SchoolsModule,
     CloudinaryModule,
     UsersModule,
     AuthModule,
