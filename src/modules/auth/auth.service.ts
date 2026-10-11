@@ -67,9 +67,9 @@ export class AuthService {
         refreshToken: session.refresh_token,
       },
       user: this.toUserResponse({
+        ...user.user_metadata,
         id: user.id,
         email: user.email,
-        ...user.user_metadata,
       }),
     };
   }

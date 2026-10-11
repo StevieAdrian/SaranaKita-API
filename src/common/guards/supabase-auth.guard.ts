@@ -41,11 +41,12 @@ export class SupabaseAuthGuard implements CanActivate {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
+    const appRole: unknown = data.user.app_metadata?.role;
     const authUser: AuthUser = {
+      ...data.user.user_metadata,
       id: data.user.id,
       email: data.user.email,
-      role: (data.user.app_metadata?.role as string) ?? 'user',
-      ...data.user.user_metadata,
+      role: typeof appRole === 'string' && appRole ? appRole : 'user',
     };
 
     request.user = authUser;
