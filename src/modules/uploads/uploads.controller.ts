@@ -11,9 +11,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CloudinaryService } from '../../cloudinary/cloudinary.service';
-
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const REPORT_IMAGE_FOLDER = 'saranakita/reports';
+import { MAX_IMAGE_BYTES, REPORT_IMAGE_FOLDER } from './uploads.constants';
 
 @Controller('uploads')
 export class UploadsController {
