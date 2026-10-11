@@ -10,6 +10,7 @@ import { SupabaseModule } from './supabase/supabase.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 
@@ -25,6 +26,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     UsersModule,
     AuthModule,
     CategoriesModule,
+    ReportsModule,
     UploadsModule,
   ],
   providers: [
