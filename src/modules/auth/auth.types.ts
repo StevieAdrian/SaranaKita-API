@@ -1,3 +1,5 @@
+import type { UserRole } from '../../common/utils/resolve-role';
+
 export interface AuthTokensResponse {
   accessToken: string;
   refreshToken: string;
@@ -7,6 +9,7 @@ export interface AuthUserResponse {
   id: string;
   email: string;
   displayName: string;
+  role: UserRole | null;
 }
 
 export interface SignInResponse {

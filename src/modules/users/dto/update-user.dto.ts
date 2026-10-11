@@ -1,4 +1,5 @@
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { USER_ROLES, type UserRole } from '../../../common/utils/resolve-role';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -7,6 +8,6 @@ export class UpdateUserDto {
   fullName?: string;
 
   @IsOptional()
-  @IsString()
-  role?: string;
+  @IsIn(USER_ROLES)
+  role?: UserRole;
 }

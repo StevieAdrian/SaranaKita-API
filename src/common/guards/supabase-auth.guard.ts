@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { SupabaseService } from '../../supabase/supabase.service';
+import { UserRoleService } from '../../modules/roles/user-role.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { AuthUser } from '../interfaces/auth-user.interface';
 
@@ -13,6 +14,7 @@ import { AuthUser } from '../interfaces/auth-user.interface';
 export class SupabaseAuthGuard implements CanActivate {
   constructor(
     private readonly supabaseService: SupabaseService,
+    private readonly userRoleService: UserRoleService,
     private readonly reflector: Reflector,
   ) {}
 
@@ -42,10 +44,10 @@ export class SupabaseAuthGuard implements CanActivate {
     }
 
     const authUser: AuthUser = {
+      ...data.user.user_metadata,
       id: data.user.id,
       email: data.user.email,
-      role: (data.user.app_metadata?.role as string) ?? 'user',
-      ...data.user.user_metadata,
+      role: await this.userRoleService.getRole(data.user.id),
     };
 
     request.user = authUser;
