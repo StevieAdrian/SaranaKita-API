@@ -11,8 +11,8 @@ import { SupabaseService } from '../../supabase/supabase.service';
 import { REPORT_IMAGE_FOLDER } from '../uploads/uploads.constants';
 import { CreateReportDto } from './dto/create-report.dto';
 import type { ReportResponse, ReportRow } from './reports.types';
+import { SchoolMembershipService } from '../schools/school-membership.service';
 
-const MEMBERSHIP_TABLES = ['siswa', 'guru', 'staff'] as const;
 const FOREIGN_KEY_VIOLATION = '23503';
 
 @Injectable()
@@ -24,6 +24,7 @@ export class ReportsService {
     private readonly supabaseService: SupabaseService,
     private readonly cloudinaryService: CloudinaryService,
     private readonly configService: ConfigService,
+    private readonly schoolMembership: SchoolMembershipService,
   ) {}
 
   async create(user: AuthUser, dto: CreateReportDto): Promise<ReportResponse> {
@@ -32,7 +33,7 @@ export class ReportsService {
     }
 
     const [schoolId] = await Promise.all([
-      this.resolveSchoolId(user.id),
+      this.schoolMembership.getSchoolId(user.id),
       this.assertCategoryExists(dto.categoryId),
     ]);
 
@@ -67,34 +68,6 @@ export class ReportsService {
     }
 
     return this.toResponse(data);
-  }
-
-  private async resolveSchoolId(userId: string): Promise<string> {
-    const client = this.supabaseService.getAdminClient();
-    const results = await Promise.all(
-      MEMBERSHIP_TABLES.map((table) =>
-        client
-          .from(table)
-          .select('school_id')
-          .eq('user_id', userId)
-          .limit(1)
-          .maybeSingle(),
-      ),
-    );
-
-    for (const { data, error } of results) {
-      if (error) {
-        throw error;
-      }
-      const schoolId = (data as { school_id?: string } | null)?.school_id;
-      if (schoolId) {
-        return schoolId;
-      }
-    }
-
-    throw new ForbiddenException(
-      'Akun kamu belum terhubung ke sekolah mana pun.',
-    );
   }
 
   private async assertCategoryExists(categoryId: string): Promise<void> {

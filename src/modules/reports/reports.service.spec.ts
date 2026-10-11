@@ -4,6 +4,7 @@ import type { CloudinaryService } from '../../cloudinary/cloudinary.service';
 import type { SupabaseService } from '../../supabase/supabase.service';
 import type { CreateReportDto } from './dto/create-report.dto';
 import { ReportsService } from './reports.service';
+import { SchoolMembershipService } from '../schools/school-membership.service';
 
 jest.mock('../../supabase/supabase.service', () => ({
   SupabaseService: class {},
@@ -72,7 +73,12 @@ function setup(overrides: Partial<Record<string, Result>> = {}) {
   const cloudinary = { deleteImage } as unknown as CloudinaryService;
   const config = { getOrThrow: () => CLOUD } as unknown as ConfigService;
   return {
-    service: new ReportsService(supabase, cloudinary, config),
+    service: new ReportsService(
+      supabase,
+      cloudinary,
+      config,
+      new SchoolMembershipService(supabase),
+    ),
     chains,
     deleteImage,
   };
