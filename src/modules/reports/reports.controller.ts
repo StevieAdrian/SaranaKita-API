@@ -38,11 +38,15 @@ export class ReportsController {
   }
 
   @Get()
+  @UseGuards(RolesGuard)
+  @Roles('siswa')
   list(@CurrentUser() user: AuthUser, @Query() query: ListReportsQueryDto) {
     return this.reportFeedService.list(user, query);
   }
 
   @Get('popular')
+  @UseGuards(RolesGuard)
+  @Roles('siswa')
   popular(
     @CurrentUser() user: AuthUser,
     @Query() query: PopularReportsQueryDto,
@@ -51,6 +55,8 @@ export class ReportsController {
   }
 
   @Get(':id')
+  @UseGuards(RolesGuard)
+  @Roles('siswa')
   findOne(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
