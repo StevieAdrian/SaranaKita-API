@@ -20,6 +20,7 @@ import {
   ListReportsQueryDto,
   PopularReportsQueryDto,
 } from './dto/list-reports.dto';
+import { ReportDetailService } from './report-detail.service';
 import { ReportFeedService } from './report-feed.service';
 import { ReportsService } from './reports.service';
 
@@ -28,6 +29,7 @@ export class ReportsController {
   constructor(
     private readonly reportsService: ReportsService,
     private readonly reportFeedService: ReportFeedService,
+    private readonly reportDetailService: ReportDetailService,
   ) {}
 
   @Post()
@@ -46,6 +48,14 @@ export class ReportsController {
     @Query() query: PopularReportsQueryDto,
   ) {
     return this.reportFeedService.popular(user, query);
+  }
+
+  @Get(':id')
+  findOne(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reportDetailService.findOne(user, id);
   }
 
   @Post(':id/votes')
