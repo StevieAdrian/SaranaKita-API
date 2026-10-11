@@ -1,15 +1,49 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  NotImplementedException,
+} from '@nestjs/common';
 import { SupabaseService } from '../../supabase/supabase.service';
-import { PaginatedResult, PaginationQueryDto } from '../../common/dto/pagination.dto';
-import { CreateUserDto } from './dto/create-user.dto';
+import {
+  PaginatedResult,
+  PaginationQueryDto,
+} from '../../common/dto/pagination.dto';
+import { toUserRole } from '../../common/utils/resolve-role';
+import { UserRoleService } from '../roles/user-role.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserEntity } from './entities/user.entity';
 
+const USER_SELECT =
+  'id, username, email, is_verified, created_at, roles(role_name), profile(full_name)';
+
+type Related<T> = T | T[] | null | undefined;
+
+type UserRow = {
+  id: string;
+  username: string | null;
+  email: string;
+  is_verified: boolean | null;
+  created_at: string;
+  roles: Related<{ role_name: string | null }>;
+  profile: Related<{ full_name: string | null }>;
+};
+
+function first<T>(value: Related<T>): T | null {
+  return (Array.isArray(value) ? value[0] : value) ?? null;
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 @Injectable()
 export class UsersService {
-  private readonly table = 'profiles';
+  private readonly table = 'user';
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly userRoleService: UserRoleService,
+  ) {}
 
   async findAll(
     query: PaginationQueryDto,
@@ -21,10 +55,11 @@ export class UsersService {
     let builder = this.supabaseService
       .getAdminClient()
       .from(this.table)
-      .select('*', { count: 'exact' });
+      .select(USER_SELECT, { count: 'exact' })
+      .order('created_at', { ascending: false });
 
     if (search) {
-      builder = builder.ilike('full_name', `%${search}%`);
+      builder = builder.ilike('username', `%${escapeLike(search)}%`);
     }
 
     const { data, count, error } = await builder.range(from, to);
@@ -36,7 +71,9 @@ export class UsersService {
     const total = count ?? 0;
 
     return {
-      items: (data as UserEntity[]) ?? [],
+      items: ((data as UserRow[] | null) ?? []).map((row) =>
+        this.toEntity(row),
+      ),
       total,
       page,
       limit,
@@ -48,68 +85,72 @@ export class UsersService {
     const { data, error } = await this.supabaseService
       .getAdminClient()
       .from(this.table)
-      .select('*')
+      .select(USER_SELECT)
       .eq('id', id)
-      .single();
-
-    if (error || !data) {
-      throw new NotFoundException(`User ${id} not found`);
-    }
-
-    return data as UserEntity;
-  }
-
-  async create(dto: CreateUserDto): Promise<UserEntity> {
-    const { data, error } = await this.supabaseService
-      .getAdminClient()
-      .from(this.table)
-      .insert({
-        email: dto.email,
-        full_name: dto.fullName,
-        role: dto.role ?? 'user',
-      })
-      .select('*')
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw error;
     }
+    if (!data) {
+      throw new NotFoundException(`User ${id} not found`);
+    }
 
-    return data as UserEntity;
+    return this.toEntity(data);
+  }
+
+  create(): Promise<UserEntity> {
+    return Promise.reject(
+      new NotImplementedException('Pembuatan user belum didukung.'),
+    );
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<UserEntity> {
     await this.findOne(id);
+    const client = this.supabaseService.getAdminClient();
 
-    const { data, error } = await this.supabaseService
-      .getAdminClient()
-      .from(this.table)
-      .update({
-        full_name: dto.fullName,
-        role: dto.role,
-      })
-      .eq('id', id)
-      .select('*')
-      .single();
-
-    if (error) {
-      throw error;
+    if (dto.role) {
+      const roleId = await this.userRoleService.getRoleId(dto.role);
+      const { error } = await client
+        .from(this.table)
+        .update({ role_id: roleId })
+        .eq('id', id);
+      if (error) {
+        throw error;
+      }
     }
 
-    return data as UserEntity;
+    if (dto.fullName !== undefined) {
+      const { error } = await client
+        .from('profile')
+        .update({
+          full_name: dto.fullName,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', id);
+      if (error) {
+        throw error;
+      }
+    }
+
+    return this.findOne(id);
   }
 
-  async remove(id: string): Promise<void> {
-    await this.findOne(id);
+  remove(): Promise<void> {
+    return Promise.reject(
+      new NotImplementedException('Penghapusan user belum didukung.'),
+    );
+  }
 
-    const { error } = await this.supabaseService
-      .getAdminClient()
-      .from(this.table)
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      throw error;
-    }
+  private toEntity(row: UserRow): UserEntity {
+    return {
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      fullName: first(row.profile)?.full_name ?? null,
+      role: toUserRole(first(row.roles)?.role_name),
+      isVerified: row.is_verified ?? false,
+      createdAt: row.created_at,
+    };
   }
 }

@@ -7,6 +7,7 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { SupabaseAuthGuard } from './common/guards/supabase-auth.guard';
 import { SupabaseModule } from './supabase/supabase.module';
+import { RolesModule } from './modules/roles/roles.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
@@ -22,6 +23,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
       validate: validateEnv,
     }),
     SupabaseModule,
+    RolesModule,
     CloudinaryModule,
     UsersModule,
     AuthModule,

@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -14,7 +15,6 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface';
-import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 
@@ -29,32 +29,36 @@ export class UsersController {
 
   @Get()
   @UseGuards(RolesGuard)
-  @Roles('admin')
+  @Roles('administrator')
   findAll(@Query() query: PaginationQueryDto) {
     return this.usersService.findAll(query);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  @UseGuards(RolesGuard)
+  @Roles('administrator')
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.findOne(id);
   }
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles('admin')
-  create(@Body() dto: CreateUserDto) {
-    return this.usersService.create(dto);
+  @Roles('administrator')
+  create() {
+    return this.usersService.create();
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+  @UseGuards(RolesGuard)
+  @Roles('administrator')
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
   }
 
   @Delete(':id')
   @UseGuards(RolesGuard)
-  @Roles('admin')
-  remove(@Param('id') id: string) {
-    return this.usersService.remove(id);
+  @Roles('administrator')
+  remove() {
+    return this.usersService.remove();
   }
 }

@@ -1,8 +1,11 @@
+import type { UserRole } from '../../../common/utils/resolve-role';
+
 export interface UserEntity {
   id: string;
+  username: string | null;
   email: string;
-  full_name: string | null;
-  role: string;
-  created_at: string;
-  updated_at: string;
+  fullName: string | null;
+  role: UserRole | null;
+  isVerified: boolean;
+  createdAt: string;
 }

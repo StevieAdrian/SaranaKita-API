@@ -2,6 +2,8 @@ import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import type { Session, User } from '@supabase/supabase-js';
 import { SupabaseService } from '../../supabase/supabase.service';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface';
+import type { UserRole } from '../../common/utils/resolve-role';
+import { UserRoleService } from '../roles/user-role.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import type {
@@ -13,6 +15,7 @@ import type {
 type UserLike = {
   id: string;
   email?: string | null;
+  role?: UserRole | null;
   full_name?: unknown;
   name?: unknown;
 };
@@ -21,7 +24,10 @@ type UserLike = {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly userRoleService: UserRoleService,
+  ) {}
 
   async signIn(dto: SignInDto): Promise<SignInResponse> {
     const { data, error } = await this.supabaseService
@@ -60,7 +66,10 @@ export class AuthService {
     return { user: this.toUserResponse(user) };
   }
 
-  private toSessionResponse(session: Session, user: User): SignInResponse {
+  private async toSessionResponse(
+    session: Session,
+    user: User,
+  ): Promise<SignInResponse> {
     return {
       tokens: {
         accessToken: session.access_token,
@@ -70,6 +79,7 @@ export class AuthService {
         ...user.user_metadata,
         id: user.id,
         email: user.email,
+        role: await this.userRoleService.getRole(user.id),
       }),
     };
   }
@@ -87,6 +97,7 @@ export class AuthService {
       id: user.id,
       email,
       displayName: metaName.trim() || email.split('@')[0] || 'User',
+      role: user.role ?? null,
     };
   }
 }
