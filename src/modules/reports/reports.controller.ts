@@ -16,12 +16,14 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { CreateReportDto } from './dto/create-report.dto';
+import { CreateReportCommentDto } from './dto/create-report-comment.dto';
 import {
   ListReportsQueryDto,
   PopularReportsQueryDto,
 } from './dto/list-reports.dto';
 import { ReportDetailService } from './report-detail.service';
 import { ReportFeedService } from './report-feed.service';
+import { ReportCommentsService } from './report-comments.service';
 import { ReportsService } from './reports.service';
 
 @Controller('reports')
@@ -30,6 +32,7 @@ export class ReportsController {
     private readonly reportsService: ReportsService,
     private readonly reportFeedService: ReportFeedService,
     private readonly reportDetailService: ReportDetailService,
+    private readonly reportCommentsService: ReportCommentsService,
   ) {}
 
   @Post()
@@ -62,6 +65,27 @@ export class ReportsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.reportDetailService.findOne(user, id);
+  }
+
+  @Get(':id/comments')
+  @UseGuards(RolesGuard)
+  @Roles('siswa')
+  listComments(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reportCommentsService.list(user, id);
+  }
+
+  @Post(':id/comments')
+  @UseGuards(RolesGuard)
+  @Roles('siswa')
+  createComment(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateReportCommentDto,
+  ) {
+    return this.reportCommentsService.create(user, id, dto);
   }
 
   @Post(':id/votes')
