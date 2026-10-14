@@ -32,6 +32,7 @@ type Related<T> = T | T[] | null | undefined;
 
 export type FeedReportRow = {
   id: string;
+  reporter_id: string;
   title: string;
   description: string | null;
   location: string | null;
@@ -50,6 +51,7 @@ export type FeedReportRow = {
 
 export type FeedReport = {
   id: string;
+  reporter_id: string;
   title: string;
   description: string;
   location: string;
@@ -83,6 +85,7 @@ export function toFeedReport(
   const profile = first(reporter?.profile);
   return {
     id: row.id,
+    reporter_id: row.reporter_id,
     title: row.title,
     description: row.description ?? '',
     location: row.location ?? '',
