@@ -238,6 +238,7 @@ export class ReportFeedService {
   async recommend(
     user: AuthUser,
     reportId: string,
+    reason: string,
   ): Promise<RecommendationResult> {
     await this.assertReportInUserSchool(user.id, reportId);
     const client = this.supabaseService.getAdminClient();
@@ -252,7 +253,16 @@ export class ReportFeedService {
     if (findError) {
       throw findError;
     }
-    if (!existing) {
+    if (existing) {
+      const { error } = await client
+        .from('recommendations')
+        .update({ reason })
+        .eq('report_id', reportId)
+        .eq('guru_id', user.id);
+      if (error) {
+        throw error;
+      }
+    } else {
       const statusId = await this.getRecommendationStatusId();
       const { error } = await client
         .from('recommendations')
@@ -260,6 +270,7 @@ export class ReportFeedService {
           report_id: reportId,
           guru_id: user.id,
           status_id: statusId,
+          reason,
         });
       if (error) {
         throw error;
