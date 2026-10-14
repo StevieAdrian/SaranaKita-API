@@ -17,6 +17,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { CreateReportDto } from './dto/create-report.dto';
 import { CreateReportCommentDto } from './dto/create-report-comment.dto';
+import { CreateReportRecommendationDto } from './dto/create-report-recommendation.dto';
 import {
   ListReportsQueryDto,
   PopularReportsQueryDto,
@@ -95,8 +96,9 @@ export class ReportsController {
   recommend(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateReportRecommendationDto,
   ) {
-    return this.reportFeedService.recommend(user, id);
+    return this.reportFeedService.recommend(user, id, dto.reason);
   }
 
   @Delete(':id/recommendations')
