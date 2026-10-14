@@ -42,14 +42,14 @@ export class ReportsController {
 
   @Get()
   @UseGuards(RolesGuard)
-  @Roles('siswa')
+  @Roles('siswa', 'guru')
   list(@CurrentUser() user: AuthUser, @Query() query: ListReportsQueryDto) {
     return this.reportFeedService.list(user, query);
   }
 
   @Get('popular')
   @UseGuards(RolesGuard)
-  @Roles('siswa')
+  @Roles('siswa', 'guru')
   popular(
     @CurrentUser() user: AuthUser,
     @Query() query: PopularReportsQueryDto,
@@ -59,7 +59,7 @@ export class ReportsController {
 
   @Get(':id')
   @UseGuards(RolesGuard)
-  @Roles('siswa')
+  @Roles('siswa', 'guru')
   findOne(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -69,7 +69,7 @@ export class ReportsController {
 
   @Get(':id/comments')
   @UseGuards(RolesGuard)
-  @Roles('siswa')
+  @Roles('siswa', 'guru')
   listComments(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -86,6 +86,28 @@ export class ReportsController {
     @Body() dto: CreateReportCommentDto,
   ) {
     return this.reportCommentsService.create(user, id, dto);
+  }
+
+  @Post(':id/recommendations')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles('guru')
+  recommend(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reportFeedService.recommend(user, id);
+  }
+
+  @Delete(':id/recommendations')
+  @UseGuards(RolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @Roles('guru')
+  removeRecommendation(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reportFeedService.removeRecommendation(user, id);
   }
 
   @Post(':id/votes')
