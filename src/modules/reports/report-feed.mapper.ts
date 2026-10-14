@@ -63,6 +63,7 @@ export type FeedReport = {
   comments: number;
   recommendations: number;
   votedByMe: boolean;
+  recommendedByMe: boolean;
 };
 
 export type VoteResult = {
@@ -78,6 +79,7 @@ function first<T>(value: Related<T>): T | null {
 export function toFeedReport(
   row: FeedReportRow,
   votedByMe: boolean,
+  recommendedByMe = false,
 ): FeedReport {
   const reporter = first(row.reporter);
   const profile = first(reporter?.profile);
@@ -97,6 +99,7 @@ export function toFeedReport(
     comments: first(row.reports_comments)?.count ?? 0,
     recommendations: first(row.recommendations)?.count ?? 0,
     votedByMe,
+    recommendedByMe,
   };
 }
 
