@@ -20,6 +20,7 @@ import { compareFeedReports, DB_SORTS } from './report-feed.sort';
 
 const FEED_SELECT = [
   'id',
+  'reporter_id',
   'title',
   'description',
   'location',
