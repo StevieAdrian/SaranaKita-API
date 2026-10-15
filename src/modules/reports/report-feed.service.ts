@@ -36,6 +36,7 @@ const FEED_SELECT = [
 
 const POPULAR_CANDIDATES = 200;
 const SORT_CANDIDATES = 500;
+const INITIAL_RECOMMENDATION_STATUS = 'Menunggu Verifikasi';
 
 @Injectable()
 export class ReportFeedService {
@@ -96,7 +97,7 @@ export class ReportFeedService {
     const total = count ?? 0;
 
     if (isDbSort) {
-      const items = await this.withVotedByMe(user.id, rows);
+      const items = await this.withUserActions(user.id, user.role, rows);
       return {
         items,
         total,
@@ -113,7 +114,7 @@ export class ReportFeedService {
       .slice(from, from + limit)
       .map((report) => byId.get(report.id))
       .filter((row): row is FeedReportRow => row !== undefined);
-    const items = await this.withVotedByMe(user.id, pageRows);
+    const items = await this.withUserActions(user.id, user.role, pageRows);
     const capped = Math.min(total, SORT_CANDIDATES);
 
     return {
@@ -176,8 +177,9 @@ export class ReportFeedService {
       throw error;
     }
 
-    const items = await this.withVotedByMe(
+    const items = await this.withUserActions(
       user.id,
+      user.role,
       (data ?? []) as unknown as FeedReportRow[],
     );
 
@@ -234,32 +236,114 @@ export class ReportFeedService {
     return this.voteResult(user.id, reportId);
   }
 
-  private async withVotedByMe(
+  async recommend(
+    user: AuthUser,
+    reportId: string,
+    reason: string,
+  ): Promise<RecommendationResult> {
+    await this.assertReportInUserSchool(user.id, reportId);
+    const client = this.supabaseService.getAdminClient();
+    const { data: existing, error: findError } = await client
+      .from('recommendations')
+      .select('id')
+      .eq('report_id', reportId)
+      .eq('guru_id', user.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (findError) {
+      throw findError;
+    }
+    if (existing) {
+      const { error } = await client
+        .from('recommendations')
+        .update({ reason })
+        .eq('report_id', reportId)
+        .eq('guru_id', user.id);
+      if (error) {
+        throw error;
+      }
+    } else {
+      const statusId = await this.getRecommendationStatusId();
+      const { error } = await client
+        .from('recommendations')
+        .insert({
+          report_id: reportId,
+          guru_id: user.id,
+          status_id: statusId,
+          reason,
+        });
+      if (error) {
+        throw error;
+      }
+    }
+    return this.recommendationResult(user.id, reportId);
+  }
+
+  async removeRecommendation(
+    user: AuthUser,
+    reportId: string,
+  ): Promise<RecommendationResult> {
+    await this.assertReportInUserSchool(user.id, reportId);
+    const { error } = await this.supabaseService
+      .getAdminClient()
+      .from('recommendations')
+      .delete()
+      .eq('report_id', reportId)
+      .eq('guru_id', user.id);
+
+    if (error) {
+      throw error;
+    }
+    return this.recommendationResult(user.id, reportId);
+  }
+
+  private async withUserActions(
     userId: string,
+    role: AuthUser['role'],
     rows: FeedReportRow[],
   ): Promise<FeedReport[]> {
     if (rows.length === 0) {
       return [];
     }
 
-    const { data, error } = await this.supabaseService
-      .getAdminClient()
-      .from('reports_votes')
-      .select('report_id')
-      .eq('user_id', userId)
-      .in(
-        'report_id',
-        rows.map((row) => row.id),
-      );
+    const client = this.supabaseService.getAdminClient();
+    const reportIds = rows.map((row) => row.id);
+    const [votes, recommendations] = await Promise.all([
+      client
+        .from('reports_votes')
+        .select('report_id')
+        .eq('user_id', userId)
+        .in('report_id', reportIds),
+      role === 'guru'
+        ? client
+            .from('recommendations')
+            .select('report_id')
+            .eq('guru_id', userId)
+            .in('report_id', reportIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
 
-    if (error) {
-      throw error;
+    if (votes.error) {
+      throw votes.error;
+    }
+    if (recommendations.error) {
+      throw recommendations.error;
     }
 
     const voted = new Set(
-      ((data ?? []) as { report_id: string }[]).map((row) => row.report_id),
+      ((votes.data ?? []) as { report_id: string }[]).map(
+        (row) => row.report_id,
+      ),
     );
-    return rows.map((row) => toFeedReport(row, voted.has(row.id)));
+    const recommended = new Set(
+      ((recommendations.data ?? []) as { report_id: string }[]).map(
+        (row) => row.report_id,
+      ),
+    );
+    return rows.map((row) =>
+      toFeedReport(row, voted.has(row.id), recommended.has(row.id)),
+    );
   }
 
   private async assertReportInUserSchool(
@@ -282,6 +366,26 @@ export class ReportFeedService {
     if (!data) {
       throw new NotFoundException('Laporan tidak ditemukan.');
     }
+  }
+
+  private async getRecommendationStatusId(): Promise<string> {
+    const { data, error } = await this.supabaseService
+      .getAdminClient()
+      .from('status')
+      .select('id')
+      .eq('status_name', INITIAL_RECOMMENDATION_STATUS)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+    if (!data) {
+      throw new NotFoundException(
+        `Status "${INITIAL_RECOMMENDATION_STATUS}" belum tersedia.`,
+      );
+    }
+    return (data as { id: string }).id;
   }
 
   private async voteResult(
@@ -314,4 +418,36 @@ export class ReportFeedService {
       votedByMe: (mine.count ?? 0) > 0,
     };
   }
+
+  private async recommendationResult(
+    userId: string,
+    reportId: string,
+  ): Promise<RecommendationResult> {
+    const client = this.supabaseService.getAdminClient();
+    const [total, mine] = await Promise.all([
+      client
+        .from('recommendations')
+        .select('id', { count: 'exact', head: true })
+        .eq('report_id', reportId),
+      client
+        .from('recommendations')
+        .select('id', { count: 'exact', head: true })
+        .eq('report_id', reportId)
+        .eq('guru_id', userId),
+    ]);
+
+    if (total.error) throw total.error;
+    if (mine.error) throw mine.error;
+    return {
+      reportId,
+      recommendations: total.count ?? 0,
+      recommendedByMe: (mine.count ?? 0) > 0,
+    };
+  }
 }
+
+export type RecommendationResult = {
+  reportId: string;
+  recommendations: number;
+  recommendedByMe: boolean;
+};
