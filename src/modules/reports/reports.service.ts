@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  NotFoundException,
   Injectable,
   Logger,
 } from '@nestjs/common';
@@ -12,6 +13,7 @@ import { REPORT_IMAGE_FOLDER } from '../uploads/uploads.constants';
 import { CreateReportDto } from './dto/create-report.dto';
 import type { ReportResponse, ReportRow } from './reports.types';
 import { SchoolMembershipService } from '../schools/school-membership.service';
+import { UpdateReportDto } from './dto/update-report.dto';
 
 const FOREIGN_KEY_VIOLATION = '23503';
 
@@ -52,7 +54,7 @@ export class ReportsService {
         image_public_id: dto.imagePublicId ?? null,
       })
       .select(
-        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url, is_validate, created_at',
+        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url,image_public_id, is_validate, created_at',
       )
       .single();
 
@@ -68,6 +70,112 @@ export class ReportsService {
     }
 
     return this.toResponse(data);
+  }
+
+  async update(
+    user: AuthUser,
+    reportId: string,
+    dto: UpdateReportDto,
+  ): Promise<ReportResponse> {
+    const client = this.supabaseService.getAdminClient();
+
+    const schoolId = await this.schoolMembership.getSchoolId(user.id);
+
+    const { data: existing, error: findError } = await client
+      .from(this.table)
+      .select(
+        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url, image_public_id, is_validate, created_at',
+      )
+      .eq('id', reportId)
+      .eq('school_id', schoolId)
+      .maybeSingle();
+
+    if (findError) {
+      throw findError;
+    }
+
+    if (!existing) {
+      throw new NotFoundException('Laporan tidak ditemukan.');
+    }
+
+    if (existing.reporter_id !== user.id) {
+      throw new ForbiddenException(
+        'Kamu hanya dapat mengedit laporan milikmu sendiri.',
+      );
+    }
+
+    if (existing.is_validate) {
+      throw new ForbiddenException('Laporan ini sudah tidak dapat diedit.');
+    }
+
+    const { data: status, error: statusError } = await client
+      .from('status')
+      .select('status_name')
+      .eq('id', existing.status_id)
+      .maybeSingle();
+
+    if (statusError) {
+      throw statusError;
+    }
+
+    // if (
+    //   !status ||
+    //   status.status_name?.trim().toLowerCase() !== 'waiting_verification'
+    // ) {
+    //   throw new ForbiddenException('Laporan ini tidak dapat diedit.');
+    // }
+
+    if (dto.categoryId !== undefined) {
+      await this.assertCategoryExists(dto.categoryId);
+    }
+
+    const patch: Record<string, unknown> = {};
+
+    if (dto.title !== undefined) patch.title = dto.title.trim();
+    if (dto.description !== undefined) {
+      patch.description = dto.description.trim();
+    }
+    if (dto.location !== undefined) patch.location = dto.location.trim();
+    if (dto.categoryId !== undefined) patch.category_id = dto.categoryId;
+    if (dto.brokenDate !== undefined) {
+      patch.broken_date = dto.brokenDate.slice(0, 10);
+    }
+
+    if (dto.imageUrl !== undefined) {
+      if (dto.imageUrl === null) {
+        patch.image_url = null;
+        patch.image_public_id = null;
+      } else {
+        this.assertOwnImage(dto.imageUrl, dto.imagePublicId);
+        patch.image_url = dto.imageUrl;
+        patch.image_public_id = dto.imagePublicId;
+      }
+    }
+
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException('Tidak ada perubahan untuk disimpan.');
+    }
+
+    const { data: updated, error: updateError } = await client
+      .from(this.table)
+      .update(patch)
+      .eq('id', reportId)
+      .eq('reporter_id', user.id)
+      .eq('school_id', schoolId)
+      .select(
+        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url, is_validate, created_at',
+      )
+      .maybeSingle();
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    if (!updated) {
+      throw new NotFoundException('Laporan tidak ditemukan.');
+    }
+
+    return this.toResponse(updated as ReportRow);
   }
 
   private async assertCategoryExists(categoryId: string): Promise<void> {

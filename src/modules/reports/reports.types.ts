@@ -9,6 +9,7 @@ export type ReportRow = {
   category_id: string | null;
   status_id: string | null;
   image_url: string | null;
+  image_public_id: string | null;
   is_validate: boolean;
   created_at: string;
 };
