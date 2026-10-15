@@ -32,6 +32,7 @@ type Related<T> = T | T[] | null | undefined;
 
 export type FeedReportRow = {
   id: string;
+  reporter_id: string;
   title: string;
   description: string | null;
   location: string | null;
@@ -50,6 +51,7 @@ export type FeedReportRow = {
 
 export type FeedReport = {
   id: string;
+  reporter_id: string;
   title: string;
   description: string;
   location: string;
@@ -63,6 +65,7 @@ export type FeedReport = {
   comments: number;
   recommendations: number;
   votedByMe: boolean;
+  recommendedByMe: boolean;
 };
 
 export type VoteResult = {
@@ -78,11 +81,13 @@ function first<T>(value: Related<T>): T | null {
 export function toFeedReport(
   row: FeedReportRow,
   votedByMe: boolean,
+  recommendedByMe = false,
 ): FeedReport {
   const reporter = first(row.reporter);
   const profile = first(reporter?.profile);
   return {
     id: row.id,
+    reporter_id: row.reporter_id,
     title: row.title,
     description: row.description ?? '',
     location: row.location ?? '',
@@ -97,6 +102,7 @@ export function toFeedReport(
     comments: first(row.reports_comments)?.count ?? 0,
     recommendations: first(row.recommendations)?.count ?? 0,
     votedByMe,
+    recommendedByMe,
   };
 }
 

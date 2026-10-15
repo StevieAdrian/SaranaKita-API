@@ -16,12 +16,15 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { CreateReportDto } from './dto/create-report.dto';
+import { CreateReportCommentDto } from './dto/create-report-comment.dto';
+import { CreateReportRecommendationDto } from './dto/create-report-recommendation.dto';
 import {
   ListReportsQueryDto,
   PopularReportsQueryDto,
 } from './dto/list-reports.dto';
 import { ReportDetailService } from './report-detail.service';
 import { ReportFeedService } from './report-feed.service';
+import { ReportCommentsService } from './report-comments.service';
 import { ReportsService } from './reports.service';
 
 @Controller('reports')
@@ -30,6 +33,7 @@ export class ReportsController {
     private readonly reportsService: ReportsService,
     private readonly reportFeedService: ReportFeedService,
     private readonly reportDetailService: ReportDetailService,
+    private readonly reportCommentsService: ReportCommentsService,
   ) {}
 
   @Post()
@@ -39,14 +43,14 @@ export class ReportsController {
 
   @Get()
   @UseGuards(RolesGuard)
-  @Roles('siswa')
+  @Roles('siswa', 'guru')
   list(@CurrentUser() user: AuthUser, @Query() query: ListReportsQueryDto) {
     return this.reportFeedService.list(user, query);
   }
 
   @Get('popular')
   @UseGuards(RolesGuard)
-  @Roles('siswa')
+  @Roles('siswa', 'guru')
   popular(
     @CurrentUser() user: AuthUser,
     @Query() query: PopularReportsQueryDto,
@@ -56,12 +60,56 @@ export class ReportsController {
 
   @Get(':id')
   @UseGuards(RolesGuard)
-  @Roles('siswa')
+  @Roles('siswa', 'guru')
   findOne(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.reportDetailService.findOne(user, id);
+  }
+
+  @Get(':id/comments')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru')
+  listComments(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reportCommentsService.list(user, id);
+  }
+
+  @Post(':id/comments')
+  @UseGuards(RolesGuard)
+  @Roles('siswa')
+  createComment(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateReportCommentDto,
+  ) {
+    return this.reportCommentsService.create(user, id, dto);
+  }
+
+  @Post(':id/recommendations')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles('guru')
+  recommend(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateReportRecommendationDto,
+  ) {
+    return this.reportFeedService.recommend(user, id, dto.reason);
+  }
+
+  @Delete(':id/recommendations')
+  @UseGuards(RolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @Roles('guru')
+  removeRecommendation(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reportFeedService.removeRecommendation(user, id);
   }
 
   @Post(':id/votes')

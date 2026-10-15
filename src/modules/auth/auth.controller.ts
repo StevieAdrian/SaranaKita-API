@@ -10,12 +10,17 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { AuthService } from './auth.service';
+import { DevRoleService } from './dev-role.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { SwitchRoleDto } from './dto/switch-role.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly devRoleService: DevRoleService,
+  ) {}
 
   @Public()
   @Post('sign-in')
@@ -34,5 +39,11 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
     return this.authService.me(user);
+  }
+
+  @Post('dev/switch-role')
+  @HttpCode(HttpStatus.OK)
+  switchRole(@CurrentUser() user: AuthUser, @Body() dto: SwitchRoleDto) {
+    return this.devRoleService.switchRole(user, dto);
   }
 }
