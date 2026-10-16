@@ -10,4 +10,16 @@ export class UpdateUserDto {
   @IsOptional()
   @IsIn(USER_ROLES)
   role?: UserRole;
+
+  @IsOptional()
+  @IsString()
+  classOrPosition?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  email?: string;
 }
