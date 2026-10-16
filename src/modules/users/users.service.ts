@@ -1,7 +1,7 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
-  NotImplementedException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../supabase/supabase.service';
 import {
@@ -10,11 +10,12 @@ import {
 } from '../../common/dto/pagination.dto';
 import { toUserRole } from '../../common/utils/resolve-role';
 import { UserRoleService } from '../roles/user-role.service';
+import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserEntity } from './entities/user.entity';
 
 const USER_SELECT =
-  'id, username, email, is_verified, created_at, roles(role_name), profile(full_name)';
+  'id, username, email, is_verified, created_at, roles(role_name), profile(full_name, class, profile_pict)';
 
 type Related<T> = T | T[] | null | undefined;
 
@@ -25,7 +26,11 @@ type UserRow = {
   is_verified: boolean | null;
   created_at: string;
   roles: Related<{ role_name: string | null }>;
-  profile: Related<{ full_name: string | null }>;
+  profile: Related<{
+    full_name: string | null;
+    class: string | null;
+    profile_pict: string | null;
+  }>;
 };
 
 function first<T>(value: Related<T>): T | null {
@@ -81,6 +86,46 @@ export class UsersService {
     };
   }
 
+  async getSummary(): Promise<{
+    totalSiswa: number;
+    totalGuru: number;
+    totalStaff: number;
+  }> {
+    const client = this.supabaseService.getAdminClient();
+    const [siswaRole, guruRole, staffRole] = await Promise.all([
+      this.userRoleService.getRoleId('siswa').catch(() => null),
+      this.userRoleService.getRoleId('guru').catch(() => null),
+      this.userRoleService.getRoleId('staff').catch(() => null),
+    ]);
+
+    const [siswaRes, guruRes, staffRes] = await Promise.all([
+      siswaRole
+        ? client
+            .from(this.table)
+            .select('id', { count: 'exact', head: true })
+            .eq('role_id', siswaRole)
+        : Promise.resolve({ count: 0, error: null }),
+      guruRole
+        ? client
+            .from(this.table)
+            .select('id', { count: 'exact', head: true })
+            .eq('role_id', guruRole)
+        : Promise.resolve({ count: 0, error: null }),
+      staffRole
+        ? client
+            .from(this.table)
+            .select('id', { count: 'exact', head: true })
+            .eq('role_id', staffRole)
+        : Promise.resolve({ count: 0, error: null }),
+    ]);
+
+    return {
+      totalSiswa: siswaRes.count ?? 0,
+      totalGuru: guruRes.count ?? 0,
+      totalStaff: staffRes.count ?? 0,
+    };
+  }
+
   async findOne(id: string): Promise<UserEntity> {
     const { data, error } = await this.supabaseService
       .getAdminClient()
@@ -96,13 +141,74 @@ export class UsersService {
       throw new NotFoundException(`User ${id} not found`);
     }
 
-    return this.toEntity(data);
+    return this.toEntity(data as unknown as UserRow);
   }
 
-  create(): Promise<UserEntity> {
-    return Promise.reject(
-      new NotImplementedException('Pembuatan user belum didukung.'),
-    );
+  async create(dto: CreateUserDto): Promise<UserEntity> {
+    const client = this.supabaseService.getAdminClient();
+    const roleId = await this.userRoleService.getRoleId(dto.role);
+
+    const password = dto.password || 'SaranaKita123!';
+    const email = dto.email.trim().toLowerCase();
+
+    const authRes = await client.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: dto.fullName },
+    });
+
+    if (authRes.error || !authRes.data.user) {
+      throw new BadRequestException(
+        authRes.error?.message ?? 'Gagal membuat user auth.',
+      );
+    }
+
+    const userId = authRes.data.user.id;
+
+    const { error: userError } = await client.from(this.table).upsert({
+      id: userId,
+      email,
+      username: email.split('@')[0],
+      role_id: roleId,
+      is_verified: true,
+    });
+
+    if (userError) {
+      throw new BadRequestException(
+        `Gagal menyimpan user: ${userError.message}`,
+      );
+    }
+
+    await client.from('profile').upsert({
+      user_id: userId,
+      full_name: dto.fullName,
+      class: dto.classOrPosition ?? null,
+    });
+
+    const { data: defaultSchool } = await client
+      .from('school')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+
+    if (defaultSchool?.id) {
+      if (dto.role === 'siswa') {
+        await client
+          .from('siswa')
+          .upsert({ user_id: userId, school_id: defaultSchool.id });
+      } else if (dto.role === 'guru') {
+        await client
+          .from('guru')
+          .upsert({ user_id: userId, school_id: defaultSchool.id });
+      } else if (dto.role === 'staff') {
+        await client
+          .from('staff')
+          .upsert({ user_id: userId, school_id: defaultSchool.id });
+      }
+    }
+
+    return this.findOne(userId);
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<UserEntity> {
@@ -120,14 +226,20 @@ export class UsersService {
       }
     }
 
-    if (dto.fullName !== undefined) {
+    if (dto.fullName !== undefined || dto.classOrPosition !== undefined) {
+      const updates: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (dto.fullName !== undefined) {
+        updates.full_name = dto.fullName;
+      }
+      if (dto.classOrPosition !== undefined) {
+        updates.class = dto.classOrPosition;
+      }
+
       const { error } = await client
         .from('profile')
-        .update({
-          full_name: dto.fullName,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', id);
+        .upsert({ user_id: id, ...updates }, { onConflict: 'user_id' });
       if (error) {
         throw error;
       }
@@ -136,21 +248,36 @@ export class UsersService {
     return this.findOne(id);
   }
 
-  remove(): Promise<void> {
-    return Promise.reject(
-      new NotImplementedException('Penghapusan user belum didukung.'),
-    );
+  async remove(id: string): Promise<void> {
+    await this.findOne(id);
+    const client = this.supabaseService.getAdminClient();
+
+    await client.from('profile').delete().eq('user_id', id);
+    await client.from('siswa').delete().eq('user_id', id);
+    await client.from('guru').delete().eq('user_id', id);
+    await client.from('staff').delete().eq('user_id', id);
+
+    const { error } = await client.from(this.table).delete().eq('id', id);
+    if (error) {
+      throw new BadRequestException(`Gagal menghapus user: ${error.message}`);
+    }
+
+    await client.auth.admin.deleteUser(id).catch(() => {});
   }
 
   private toEntity(row: UserRow): UserEntity {
+    const prof = first(row.profile);
     return {
       id: row.id,
       username: row.username,
       email: row.email,
-      fullName: first(row.profile)?.full_name ?? null,
+      fullName: prof?.full_name ?? null,
       role: toUserRole(first(row.roles)?.role_name),
       isVerified: row.is_verified ?? false,
       createdAt: row.created_at,
+      classOrPosition: prof?.class ?? null,
+      avatarUrl: prof?.profile_pict ?? null,
+      status: 'active',
     };
   }
 }

@@ -8,4 +8,7 @@ export interface UserEntity {
   role: UserRole | null;
   isVerified: boolean;
   createdAt: string;
+  classOrPosition?: string | null;
+  avatarUrl?: string | null;
+  status?: string;
 }
