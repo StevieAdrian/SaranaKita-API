@@ -9,6 +9,7 @@ import {
   Patch,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -29,6 +30,7 @@ import { ReportFeedService } from './report-feed.service';
 import { ReportCommentsService } from './report-comments.service';
 import { ReportsService } from './reports.service';
 import { ReportDashboardService } from './report-dashboard.service';
+import { UpdateReportDto } from './dto/update-report.dto';
 
 @Controller('reports')
 export class ReportsController {
@@ -149,5 +151,16 @@ export class ReportsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.reportFeedService.unvote(user, id);
+  }
+
+  @Put(':id')
+  @UseGuards(RolesGuard)
+  @Roles('siswa')
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateReportDto,
+  ) {
+    return this.reportsService.update(user, id, dto);
   }
 }

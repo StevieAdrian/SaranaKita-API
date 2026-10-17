@@ -43,6 +43,7 @@ const USER = { id: 'user-1', role: 'siswa' as const };
 
 const row: FeedReportRow = {
   id: 'r1',
+  reporter_id: 'user-1',
   title: 'Proyektor',
   description: null,
   location: 'XII B',
@@ -94,6 +95,7 @@ describe('report feed mapper', () => {
   it('maps a row with nested relations', () => {
     expect(toFeedReport(row, true)).toEqual({
       id: 'r1',
+      reporter_id: 'user-1',
       title: 'Proyektor',
       description: '',
       location: 'XII B',
@@ -107,6 +109,7 @@ describe('report feed mapper', () => {
       comments: 1,
       recommendations: 0,
       votedByMe: true,
+      recommendedByMe: false,
     });
   });
 
