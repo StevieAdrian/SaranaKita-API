@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,6 +19,7 @@ import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { CreateReportDto } from './dto/create-report.dto';
 import { CreateReportCommentDto } from './dto/create-report-comment.dto';
 import { CreateReportRecommendationDto } from './dto/create-report-recommendation.dto';
+import { UpdateReportStatusDto } from './dto/update-report-status.dto';
 import {
   ListReportsQueryDto,
   PopularReportsQueryDto,
@@ -26,6 +28,7 @@ import { ReportDetailService } from './report-detail.service';
 import { ReportFeedService } from './report-feed.service';
 import { ReportCommentsService } from './report-comments.service';
 import { ReportsService } from './reports.service';
+import { ReportDashboardService } from './report-dashboard.service';
 
 @Controller('reports')
 export class ReportsController {
@@ -34,6 +37,7 @@ export class ReportsController {
     private readonly reportFeedService: ReportFeedService,
     private readonly reportDetailService: ReportDetailService,
     private readonly reportCommentsService: ReportCommentsService,
+    private readonly reportDashboardService: ReportDashboardService,
   ) {}
 
   @Post()
@@ -58,9 +62,26 @@ export class ReportsController {
     return this.reportFeedService.popular(user, query);
   }
 
+  @Get('dashboard')
+  @UseGuards(RolesGuard)
+  @Roles('administrator')
+  dashboard() {
+    return this.reportDashboardService.getDashboard();
+  }
+
+  @Patch(':id/status')
+  @UseGuards(RolesGuard)
+  @Roles('administrator')
+  updateStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateReportStatusDto,
+  ) {
+    return this.reportDetailService.updateStatus(id, dto);
+  }
+
   @Get(':id')
   @UseGuards(RolesGuard)
-  @Roles('siswa', 'guru')
+  @Roles('siswa', 'guru', 'administrator')
   findOne(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -70,7 +91,7 @@ export class ReportsController {
 
   @Get(':id/comments')
   @UseGuards(RolesGuard)
-  @Roles('siswa', 'guru')
+  @Roles('siswa', 'guru', 'administrator')
   listComments(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
