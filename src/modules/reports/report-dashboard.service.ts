@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { SupabaseService } from '../../supabase/supabase.service';
+import { SchoolMembershipService } from '../schools/school-membership.service';
 import {
   REPORT_STATUSES,
   toFeedReport,
@@ -40,35 +42,42 @@ export type ReportDashboard = {
 
 @Injectable()
 export class ReportDashboardService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly schoolMembership: SchoolMembershipService,
+  ) {}
 
-  async getDashboard(): Promise<ReportDashboard> {
+  async getDashboard(user: AuthUser): Promise<ReportDashboard> {
     const client = this.supabaseService.getAdminClient();
+    const userSchool =
+      user.role === 'administrator'
+        ? null
+        : await this.schoolMembership.getSchool(user.id);
     const now = new Date();
     const monthStart = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
     ).toISOString();
 
-    const [
-      statusResult,
-      categoryResult,
-      schoolResult,
-      totalResult,
-      monthResult,
-    ] = await Promise.all([
-      client.from('status').select('id, status_name'),
-      client.from('category').select('id, category_name'),
-      client.from('school').select('school_name').limit(1).maybeSingle(),
-      client.from('report').select('id', { count: 'exact', head: true }),
-      client
+    const countReports = () => {
+      const query = client
         .from('report')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', monthStart),
-    ]);
+        .select('id', { count: 'exact', head: true });
+      return userSchool ? query.eq('school_id', userSchool.id) : query;
+    };
+    const [statusResult, categoryResult, totalResult, monthResult] =
+      await Promise.all([
+        client.from('status').select('id, status_name'),
+        client.from('category').select('id, category_name'),
+        countReports(),
+        countReports().gte('created_at', monthStart),
+      ]);
+    const schoolResult = userSchool
+      ? null
+      : await client.from('school').select('school_name').limit(1).maybeSingle();
 
     if (statusResult.error) throw statusResult.error;
     if (categoryResult.error) throw categoryResult.error;
-    if (schoolResult.error) throw schoolResult.error;
+    if (schoolResult?.error) throw schoolResult.error;
     if (totalResult.error) throw totalResult.error;
     if (monthResult.error) throw monthResult.error;
 
@@ -86,20 +95,10 @@ export class ReportDashboardService {
       REPORT_STATUSES.map(async (status) => {
         const ids = idsByStatus.get(status) ?? [];
         const queries = ids.length
-          ? [
-              client
-                .from('report')
-                .select('id', { count: 'exact', head: true })
-                .in('status_id', ids),
-            ]
+          ? [countReports().in('status_id', ids)]
           : [];
         if (status === 'waiting_verification') {
-          queries.push(
-            client
-              .from('report')
-              .select('id', { count: 'exact', head: true })
-              .is('status_id', null),
-          );
+          queries.push(countReports().is('status_id', null));
         }
         const results = await Promise.all(queries);
         for (const result of results) {
@@ -114,10 +113,10 @@ export class ReportDashboardService {
 
     const categoryCounts = await Promise.all(
       categories.map(async (category) => {
-        const { count, error } = await client
-          .from('report')
-          .select('id', { count: 'exact', head: true })
-          .eq('category_id', category.id);
+        const { count, error } = await countReports().eq(
+          'category_id',
+          category.id,
+        );
         if (error) throw error;
         return {
           id: category.id,
@@ -138,13 +137,16 @@ export class ReportDashboardService {
           ? `status_id.is.null,status_id.in.(${waitingIds.join(',')})`
           : 'status_id.is.null',
       );
+    if (userSchool) urgentQuery.eq('school_id', userSchool.id);
 
     const { data: urgentRows, error: urgentError } = await urgentQuery;
     if (urgentError) throw urgentError;
 
     return {
       generatedAt: now.toISOString(),
-      schoolName: (schoolResult.data as SchoolRow | null)?.school_name ?? null,
+      schoolName: userSchool
+        ? userSchool.name
+        : (schoolResult?.data as SchoolRow | null)?.school_name ?? null,
       totalReports: totalResult.count ?? 0,
       totalThisMonth: monthResult.count ?? 0,
       statusCounts,

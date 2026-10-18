@@ -66,24 +66,25 @@ export class ReportsController {
 
   @Get('dashboard')
   @UseGuards(RolesGuard)
-  @Roles('administrator')
-  dashboard() {
-    return this.reportDashboardService.getDashboard();
+  @Roles('administrator', 'staff')
+  dashboard(@CurrentUser() user: AuthUser) {
+    return this.reportDashboardService.getDashboard(user);
   }
 
   @Patch(':id/status')
   @UseGuards(RolesGuard)
-  @Roles('administrator')
+  @Roles('administrator', 'staff')
   updateStatus(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateReportStatusDto,
   ) {
-    return this.reportDetailService.updateStatus(id, dto);
+    return this.reportDetailService.updateStatus(user, id, dto);
   }
 
   @Get(':id')
   @UseGuards(RolesGuard)
-  @Roles('siswa', 'guru', 'administrator')
+  @Roles('siswa', 'guru', 'administrator', 'staff')
   findOne(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -93,7 +94,7 @@ export class ReportsController {
 
   @Get(':id/comments')
   @UseGuards(RolesGuard)
-  @Roles('siswa', 'guru', 'administrator')
+  @Roles('siswa', 'guru', 'administrator', 'staff')
   listComments(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
