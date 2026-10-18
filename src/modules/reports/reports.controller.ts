@@ -49,7 +49,7 @@ export class ReportsController {
 
   @Get()
   @UseGuards(RolesGuard)
-  @Roles('siswa', 'guru')
+  @Roles('siswa', 'guru', 'staff', 'administrator')
   list(@CurrentUser() user: AuthUser, @Query() query: ListReportsQueryDto) {
     return this.reportFeedService.list(user, query);
   }
