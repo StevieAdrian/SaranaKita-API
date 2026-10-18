@@ -57,6 +57,7 @@ export class ReportDetailService {
   }
 
   async updateStatus(
+    user: AuthUser,
     reportId: string,
     dto: UpdateReportStatusDto,
   ): Promise<ReportDetail> {
@@ -74,14 +75,19 @@ export class ReportDetailService {
       throw new BadRequestException('Status laporan tidak ditemukan.');
     }
 
-    const { data, error } = await client
+    const reportQuery = client
       .from('report')
       .update({
         status_id: (status as { id: string }).id,
         is_validate: dto.statusName !== 'Menunggu Verifikasi',
         updated_at: new Date().toISOString(),
       })
-      .eq('id', reportId)
+      .eq('id', reportId);
+    if (user.role !== 'administrator') {
+      const schoolId = await this.schoolMembership.getSchoolId(user.id);
+      reportQuery.eq('school_id', schoolId);
+    }
+    const { data, error } = await reportQuery
       .select(REPORT_DETAIL_SELECT)
       .maybeSingle();
 
