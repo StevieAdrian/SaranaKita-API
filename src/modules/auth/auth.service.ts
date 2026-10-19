@@ -101,6 +101,7 @@ export class AuthService {
       id: userId,
       email,
       username,
+      password: dto.password,
       role_id: roleId,
       is_verified: true,
     });

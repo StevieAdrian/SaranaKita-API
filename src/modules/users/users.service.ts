@@ -170,6 +170,7 @@ export class UsersService {
       id: userId,
       email,
       username: email.split('@')[0],
+      password,
       role_id: roleId,
       is_verified: true,
     });
