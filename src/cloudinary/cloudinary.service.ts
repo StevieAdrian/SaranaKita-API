@@ -15,7 +15,7 @@ export type UploadedImage = {
 export class CloudinaryService implements OnModuleInit {
   private readonly logger = new Logger(CloudinaryService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService) { }
 
   onModuleInit() {
     cloudinary.config({
@@ -26,14 +26,16 @@ export class CloudinaryService implements OnModuleInit {
     });
   }
 
-  uploadImage(buffer: Buffer, folder: string): Promise<UploadedImage> {
+  uploadImage(buffer: Buffer, folder: string, publicId?: string,): Promise<UploadedImage> {
     return new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
           folder,
+          ...(publicId ? { public_id: publicId, overwrite: true } : {}),
           resource_type: 'image',
           transformation: [{ width: 1600, height: 1600, crop: 'limit' }],
         },
+
         (error, result?: UploadApiResponse) => {
           if (error || !result) {
             reject(
