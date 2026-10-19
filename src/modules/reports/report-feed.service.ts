@@ -49,7 +49,7 @@ export class ReportFeedService {
     user: AuthUser,
     query: ListReportsQueryDto,
   ): Promise<PaginatedResult<FeedReport>> {
-    const schoolId = await this.schoolMembership.getSchoolId(user.id);
+    const schoolId = user.role === 'administrator' ? null : await this.schoolMembership.getSchoolId(user.id);
     const { page, limit } = query;
     const sort = query.sort ?? 'latest';
     const from = (page - 1) * limit;
@@ -58,8 +58,11 @@ export class ReportFeedService {
     let builder = this.supabaseService
       .getAdminClient()
       .from('report')
-      .select(FEED_SELECT, { count: 'exact' })
-      .eq('school_id', schoolId);
+      .select(FEED_SELECT, { count: 'exact' });
+
+    if (schoolId) {
+      builder = builder.eq('school_id', schoolId);
+    }
 
     if (query.categoryId) {
       builder = builder.eq('category_id', query.categoryId);

@@ -1,7 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { SchoolMembershipService } from '../schools/school-membership.service';
+import type { UpdateReportStatusDto } from './dto/update-report-status.dto';
 import {
   REPORT_DETAIL_SELECT,
   toReportDetail,
@@ -17,16 +22,17 @@ export class ReportDetailService {
   ) {}
 
   async findOne(user: AuthUser, reportId: string): Promise<ReportDetail> {
-    const schoolId = await this.schoolMembership.getSchoolId(user.id);
     const client = this.supabaseService.getAdminClient();
-
+    const reportQuery = client
+      .from('report')
+      .select(REPORT_DETAIL_SELECT)
+      .eq('id', reportId);
+    if (user.role !== 'administrator') {
+      const schoolId = await this.schoolMembership.getSchoolId(user.id);
+      reportQuery.eq('school_id', schoolId);
+    }
     const [report, myVote] = await Promise.all([
-      client
-        .from('report')
-        .select(REPORT_DETAIL_SELECT)
-        .eq('id', reportId)
-        .eq('school_id', schoolId)
-        .maybeSingle(),
+      reportQuery.maybeSingle(),
       client
         .from('reports_votes')
         .select('id', { count: 'exact', head: true })
@@ -48,5 +54,50 @@ export class ReportDetailService {
       report.data as unknown as ReportDetailRow,
       (myVote.count ?? 0) > 0,
     );
+  }
+
+  async updateStatus(
+    user: AuthUser,
+    reportId: string,
+    dto: UpdateReportStatusDto,
+  ): Promise<ReportDetail> {
+    const client = this.supabaseService.getAdminClient();
+    const { data: status, error: statusError } = await client
+      .from('status')
+      .select('id')
+      .eq('status_name', dto.statusName)
+      .maybeSingle();
+
+    if (statusError) {
+      throw statusError;
+    }
+    if (!status) {
+      throw new BadRequestException('Status laporan tidak ditemukan.');
+    }
+
+    const reportQuery = client
+      .from('report')
+      .update({
+        status_id: (status as { id: string }).id,
+        is_validate: dto.statusName !== 'Menunggu Verifikasi',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', reportId);
+    if (user.role !== 'administrator') {
+      const schoolId = await this.schoolMembership.getSchoolId(user.id);
+      reportQuery.eq('school_id', schoolId);
+    }
+    const { data, error } = await reportQuery
+      .select(REPORT_DETAIL_SELECT)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+    if (!data) {
+      throw new NotFoundException('Laporan tidak ditemukan.');
+    }
+
+    return toReportDetail(data as unknown as ReportDetailRow, false);
   }
 }

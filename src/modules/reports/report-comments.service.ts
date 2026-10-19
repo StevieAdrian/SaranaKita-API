@@ -49,7 +49,11 @@ export class ReportCommentsService {
   ) {}
 
   async list(user: AuthUser, reportId: string): Promise<ReportComment[]> {
-    await this.assertReportInUserSchool(user.id, reportId);
+    if (user.role !== 'administrator') {
+      await this.assertReportInUserSchool(user.id, reportId);
+    } else {
+      await this.assertReportExists(reportId);
+    }
     const { data, error } = await this.supabaseService
       .getAdminClient()
       .from('reports_comments')
@@ -107,6 +111,22 @@ export class ReportCommentsService {
       .select('id')
       .eq('id', reportId)
       .eq('school_id', schoolId)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+    if (!data) {
+      throw new NotFoundException('Laporan tidak ditemukan.');
+    }
+  }
+
+  private async assertReportExists(reportId: string): Promise<void> {
+    const { data, error } = await this.supabaseService
+      .getAdminClient()
+      .from('report')
+      .select('id')
+      .eq('id', reportId)
       .maybeSingle();
 
     if (error) {
