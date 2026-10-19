@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   ParseUUIDPipe,
   Post,
   Put,
@@ -19,6 +20,7 @@ import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { CreateReportDto } from './dto/create-report.dto';
 import { CreateReportCommentDto } from './dto/create-report-comment.dto';
 import { CreateReportRecommendationDto } from './dto/create-report-recommendation.dto';
+import { UpdateReportStatusDto } from './dto/update-report-status.dto';
 import {
   ListReportsQueryDto,
   PopularReportsQueryDto,
@@ -27,6 +29,7 @@ import { ReportDetailService } from './report-detail.service';
 import { ReportFeedService } from './report-feed.service';
 import { ReportCommentsService } from './report-comments.service';
 import { ReportsService } from './reports.service';
+import { ReportDashboardService } from './report-dashboard.service';
 import { UpdateReportDto } from './dto/update-report.dto';
 
 @Controller('reports')
@@ -36,6 +39,7 @@ export class ReportsController {
     private readonly reportFeedService: ReportFeedService,
     private readonly reportDetailService: ReportDetailService,
     private readonly reportCommentsService: ReportCommentsService,
+    private readonly reportDashboardService: ReportDashboardService,
   ) {}
 
   @Post()
@@ -45,7 +49,7 @@ export class ReportsController {
 
   @Get()
   @UseGuards(RolesGuard)
-  @Roles('siswa', 'guru')
+  @Roles('siswa', 'guru', 'staff', 'administrator')
   list(@CurrentUser() user: AuthUser, @Query() query: ListReportsQueryDto) {
     return this.reportFeedService.list(user, query);
   }
@@ -60,9 +64,27 @@ export class ReportsController {
     return this.reportFeedService.popular(user, query);
   }
 
+  @Get('dashboard')
+  @UseGuards(RolesGuard)
+  @Roles('administrator', 'staff')
+  dashboard(@CurrentUser() user: AuthUser) {
+    return this.reportDashboardService.getDashboard(user);
+  }
+
+  @Patch(':id/status')
+  @UseGuards(RolesGuard)
+  @Roles('administrator', 'staff')
+  updateStatus(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateReportStatusDto,
+  ) {
+    return this.reportDetailService.updateStatus(user, id, dto);
+  }
+
   @Get(':id')
   @UseGuards(RolesGuard)
-  @Roles('siswa', 'guru')
+  @Roles('siswa', 'guru', 'administrator', 'staff')
   findOne(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -72,7 +94,7 @@ export class ReportsController {
 
   @Get(':id/comments')
   @UseGuards(RolesGuard)
-  @Roles('siswa', 'guru')
+  @Roles('siswa', 'guru', 'administrator', 'staff')
   listComments(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
