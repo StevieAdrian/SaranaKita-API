@@ -47,6 +47,12 @@ export type FeedReportRow = {
   reports_votes: Related<{ count: number }>;
   reports_comments: Related<{ count: number }>;
   recommendations: Related<{ count: number }>;
+  reports_notes: Related<{
+    id: string;
+    author_id: string;
+    note_text: string | null;
+    created_at: string;
+  }>;
 };
 
 export type FeedReport = {
@@ -66,6 +72,12 @@ export type FeedReport = {
   recommendations: number;
   votedByMe: boolean;
   recommendedByMe: boolean;
+  note: {
+    id: string;
+    authorId: string;
+    text: string;
+    createdAt: string;
+  } | null;
 };
 
 export type VoteResult = {
@@ -103,6 +115,20 @@ export function toFeedReport(
     recommendations: first(row.recommendations)?.count ?? 0,
     votedByMe,
     recommendedByMe,
+    note: (() => {
+      const note = first(row.reports_notes);
+
+      if (!note) {
+        return null;
+      }
+
+      return {
+        id: note.id,
+        authorId: note.author_id,
+        text: note.note_text ?? '',
+        createdAt: note.created_at,
+      };
+    })(),
   };
 }
 
@@ -113,3 +139,5 @@ export function toSearchTerm(search: string | undefined): string | null {
     .trim();
   return cleaned || null;
 }
+
+//untuk report notes

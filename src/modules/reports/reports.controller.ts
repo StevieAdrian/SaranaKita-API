@@ -31,6 +31,8 @@ import { ReportCommentsService } from './report-comments.service';
 import { ReportsService } from './reports.service';
 import { ReportDashboardService } from './report-dashboard.service';
 import { UpdateReportDto } from './dto/update-report.dto';
+import { ReportNotesService } from './report-notes.service';
+import { CreateReportNoteDto } from './dto/create-report-note.dto';
 
 @Controller('reports')
 export class ReportsController {
@@ -40,8 +42,10 @@ export class ReportsController {
     private readonly reportDetailService: ReportDetailService,
     private readonly reportCommentsService: ReportCommentsService,
     private readonly reportDashboardService: ReportDashboardService,
+    private readonly reportNotesService: ReportNotesService,
   ) {}
 
+  //Report
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateReportDto) {
     return this.reportsService.create(user, dto);
@@ -71,6 +75,18 @@ export class ReportsController {
     return this.reportDashboardService.getDashboard(user);
   }
 
+  @Put(':id')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateReportDto,
+  ) {
+    return this.reportsService.update(user, id, dto);
+  }
+
+  //Report Detail
   @Patch(':id/status')
   @UseGuards(RolesGuard)
   @Roles('administrator', 'staff')
@@ -92,6 +108,7 @@ export class ReportsController {
     return this.reportDetailService.findOne(user, id);
   }
 
+  //Report Comment
   @Get(':id/comments')
   @UseGuards(RolesGuard)
   @Roles('siswa', 'guru', 'administrator', 'staff')
@@ -113,6 +130,7 @@ export class ReportsController {
     return this.reportCommentsService.create(user, id, dto);
   }
 
+  //Report Recommend
   @Post(':id/recommendations')
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
@@ -136,6 +154,7 @@ export class ReportsController {
     return this.reportFeedService.removeRecommendation(user, id);
   }
 
+  //Report Vote
   @Post(':id/votes')
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
@@ -154,14 +173,37 @@ export class ReportsController {
     return this.reportFeedService.unvote(user, id);
   }
 
-  @Put(':id')
+  //Report Notes
+  @Post(':id/notes')
   @UseGuards(RolesGuard)
-  @Roles('siswa')
-  update(
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  createNote(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateReportDto,
+    @Body() dto: CreateReportNoteDto,
   ) {
-    return this.reportsService.update(user, id, dto);
+    return this.reportNotesService.create(user, id, dto);
+  }
+
+  @Put(':id/notes')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  updateNote(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateReportNoteDto,
+  ) {
+    return this.reportNotesService.update(user, id, dto);
+  }
+
+  @Delete(':id/notes')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  removeNote(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reportNotesService.remove(user, id);
   }
 }
