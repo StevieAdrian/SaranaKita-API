@@ -78,6 +78,14 @@ export class AuthService {
 
     const roleId = await this.userRoleService.getRoleId('siswa');
 
+    let genderLabel = dto.gender;
+    const lowerGender = (dto.gender || '').trim().toLowerCase();
+    if (lowerGender === 'female' || lowerGender === 'perempuan') {
+      genderLabel = 'Perempuan';
+    } else if (lowerGender === 'male' || lowerGender === 'laki-laki') {
+      genderLabel = 'Laki-Laki';
+    }
+
     const authRes = await client.auth.admin.createUser({
       email,
       password: dto.password,
@@ -85,7 +93,7 @@ export class AuthService {
       user_metadata: {
         full_name: fullName,
         phone: dto.phone,
-        gender: dto.gender,
+        gender: genderLabel,
       },
     });
 

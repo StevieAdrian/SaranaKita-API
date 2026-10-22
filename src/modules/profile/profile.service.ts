@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { toUserRole, type UserRole } from '../../common/utils/resolve-role';
 import { SchoolMembershipService } from '../schools/school-membership.service';
@@ -52,16 +47,18 @@ export type FullUserProfile = {
     reportsCreated: number;
     votesCount: number;
     recommendationsCount: number;
-    pendingConfirmation: number;
-    inReview: number;
-    inRepair: number;
-    rejected: number;
-    resolved: number;
+    'Menunggu Verifikasi': number;
+    'Dalam Pemeriksaan': number;
+    'Dalam Perbaikan': number;
+    'Selesai': number;
+    'Ditolak': number;
   };
 };
 
 @Injectable()
 export class ProfileService {
+  private readonly logger = new Logger(ProfileService.name);
+
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly schoolMembership: SchoolMembershipService,
@@ -95,6 +92,8 @@ export class ProfileService {
       accreditation: '-',
     };
 
+    let schoolId: string | null = null;
+
     try {
       const [siswa, guru, staff] = await Promise.all([
         client
@@ -115,6 +114,7 @@ export class ProfileService {
       ]);
 
       const membership = siswa.data ?? guru.data ?? staff.data;
+      schoolId = membership?.school_id ?? null;
       const schoolData = membership?.school;
       const school = first(schoolData as Related<{
         id: string;
@@ -146,6 +146,17 @@ export class ProfileService {
       '';
     const gender = (authUser?.user_metadata?.gender as string) || '';
 
+    const isStaffOrAdmin = role === 'staff' || role === 'administrator';
+
+    let statusReportsQuery = client
+      .from('report')
+      .select('id, status(status_name)');
+    if (isStaffOrAdmin && schoolId) {
+      statusReportsQuery = statusReportsQuery.eq('school_id', schoolId);
+    } else if (!isStaffOrAdmin) {
+      statusReportsQuery = statusReportsQuery.eq('reporter_id', userId);
+    }
+
     const [reportsCountRes, votesRes, recommsRes, userReportsRes] =
       await Promise.all([
         client
@@ -160,27 +171,26 @@ export class ProfileService {
           .from('recommendations')
           .select('id', { count: 'exact', head: true })
           .eq('guru_id', userId),
-        client
-          .from('report')
-          .select('id, status(status_name)')
-          .eq('reporter_id', userId),
+        statusReportsQuery,
       ]);
 
-    let pendingConfirmation = 0;
-    let inReview = 0;
-    let inRepair = 0;
-    let rejected = 0;
-    let resolved = 0;
+    const statusCounts = {
+      'Menunggu Verifikasi': 0,
+      'Dalam Pemeriksaan': 0,
+      'Dalam Perbaikan': 0,
+      'Selesai': 0,
+      'Ditolak': 0,
+    };
 
     for (const r of (userReportsRes.data ?? []) as Array<{
       status: Related<{ status_name: string | null }>;
     }>) {
       const s = (first(r.status)?.status_name ?? '').toLowerCase();
-      if (s.includes('menunggu')) pendingConfirmation++;
-      else if (s.includes('pemeriksaan')) inReview++;
-      else if (s.includes('perbaikan')) inRepair++;
-      else if (s.includes('tolak')) rejected++;
-      else if (s.includes('selesai')) resolved++;
+      if (s.includes('menunggu') || !s) statusCounts['Menunggu Verifikasi']++;
+      else if (s.includes('pemeriksaan')) statusCounts['Dalam Pemeriksaan']++;
+      else if (s.includes('perbaikan')) statusCounts['Dalam Perbaikan']++;
+      else if (s.includes('selesai')) statusCounts['Selesai']++;
+      else if (s.includes('tolak')) statusCounts['Ditolak']++;
     }
 
     return {
@@ -196,17 +206,18 @@ export class ProfileService {
       birthDate: profile?.dob ?? '',
       gender,
       avatarUrl: profile?.profile_pict ?? null,
-      classOrPosition: profile?.class ?? '',
+      classOrPosition:
+        profile?.class ||
+        (authUser?.user_metadata?.classOrPosition as string) ||
+        (authUser?.user_metadata?.jabatan as string) ||
+        (authUser?.user_metadata?.class_grade as string) ||
+        '',
       schoolInfo,
       stats: {
         reportsCreated: reportsCountRes.count ?? 0,
         votesCount: votesRes.count ?? 0,
         recommendationsCount: recommsRes.count ?? 0,
-        pendingConfirmation,
-        inReview,
-        inRepair,
-        rejected,
-        resolved,
+        ...statusCounts,
       },
     };
   }
@@ -248,14 +259,30 @@ export class ProfileService {
     if (dto.fullName !== undefined) metadataUpdates.full_name = dto.fullName;
     if (dto.phone !== undefined) metadataUpdates.phone = dto.phone;
     if (dto.gender !== undefined) metadataUpdates.gender = dto.gender;
+    if (dto.classOrPosition !== undefined) {
+      metadataUpdates.classOrPosition = dto.classOrPosition;
+      metadataUpdates.jabatan = dto.classOrPosition;
+      metadataUpdates.class_grade = dto.classOrPosition;
+    }
 
     if (Object.keys(metadataUpdates).length > 0) {
+      const existingUser = await client.auth.admin
+        .getUserById(userId)
+        .then((r) => r.data?.user)
+        .catch(() => null);
+
+      const mergedMetadata = {
+        ...(existingUser?.user_metadata ?? {}),
+        ...metadataUpdates,
+      };
+
       await client.auth.admin
         .updateUserById(userId, {
-          user_metadata: metadataUpdates,
-          ...(dto.phone ? { phone: dto.phone } : {}),
+          user_metadata: mergedMetadata,
         })
-        .catch(() => { });
+        .catch((err) => {
+          this.logger.warn(`Failed to update user_metadata: ${err?.message}`);
+        });
     }
 
     return this.getProfile(userId);
@@ -300,6 +327,15 @@ export class ProfileService {
       throw new BadRequestException(
         updateErr.message ?? 'Gagal memperbarui kata sandi.',
       );
+    }
+
+    const { error: userTableErr } = await admin
+      .from('user')
+      .update({ password: dto.newPassword })
+      .eq('id', userId);
+
+    if (userTableErr) {
+      this.logger.warn(`Failed to update password in user table: ${userTableErr.message}`);
     }
 
     return { message: 'Kata sandi berhasil diperbarui.' };
