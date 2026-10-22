@@ -29,6 +29,13 @@ export type ReportDetailRow = {
   reports_votes: Related<{ count: number }>;
   reports_comments: Related<{ count: number }>;
   recommendations: Related<{ count: number }>;
+  reports_notes: Related<{
+    id: string;
+    author_id: string;
+    note_text: string | null;
+    created_at: string;
+    is_delete: boolean | null;
+  }>;
 };
 
 export type ReportTimelineEvent = {
@@ -60,6 +67,12 @@ export type ReportDetail = {
   rejectedBy: string | null;
   updatedBy: string | null;
   timeline: ReportTimelineEvent[];
+  note: {
+    id: string;
+    authorId: string;
+    text: string;
+    createdAt: string;
+  } | null;
 };
 
 export const REPORT_DETAIL_SELECT = [
@@ -80,6 +93,7 @@ export const REPORT_DETAIL_SELECT = [
   'reports_votes(count)',
   'reports_comments(count)',
   'recommendations(count)',
+  'reports_notes(id, author_id, note_text, created_at, is_delete)',
 ].join(', ');
 
 function first<T>(value: Related<T>): T | null {
@@ -106,6 +120,24 @@ export function toReportDetail(
   const profile = first(reporter?.profile);
   const category = first(row.category);
   const status = toReportStatus(first(row.status)?.status_name);
+  const notes = Array.isArray(row.reports_notes)
+    ? row.reports_notes
+    : row.reports_notes
+      ? [row.reports_notes]
+      : [];
+
+  const noteRow = notes.find(
+    (item) => item.is_delete === false || item.is_delete === null,
+  );
+
+  const note = noteRow
+    ? {
+        id: noteRow.id,
+        authorId: noteRow.author_id,
+        text: noteRow.note_text ?? '',
+        createdAt: noteRow.created_at,
+      }
+    : null;
 
   return {
     id: row.id,
@@ -134,5 +166,6 @@ export function toReportDetail(
     rejectedBy: row.rejected_by,
     updatedBy: row.updated_by,
     timeline: buildTimeline(status, row.created_at, row.updated_at),
+    note,
   };
 }

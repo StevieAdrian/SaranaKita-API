@@ -35,7 +35,7 @@ const FEED_SELECT = [
   'reports_votes(count)',
   'reports_comments(count)',
   'recommendations(count)',
-  'reports_notes(id, author_id, note_text, created_at)',
+  'reports_notes(id, author_id, note_text, created_at, is_delete)',
 ].join(', ');
 
 const POPULAR_CANDIDATES = 200;
