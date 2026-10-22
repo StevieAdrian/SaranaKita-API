@@ -39,6 +39,9 @@ export type FeedReportRow = {
   category_id: string | null;
   image_url: string | null;
   created_at: string;
+  verified_by: string | null;
+  rejected_by: string | null;
+  updated_by: string | null;
   status: Related<{ status_name: string | null }>;
   reporter: Related<{
     username: string | null;
@@ -61,6 +64,9 @@ export type FeedReport = {
   reporterName: string;
   reporterClass: string | null;
   createdAt: string;
+  verifiedBy: string | null;
+  rejectedBy: string | null;
+  updatedBy: string | null;
   votes: number;
   comments: number;
   recommendations: number;
@@ -98,6 +104,9 @@ export function toFeedReport(
       profile?.full_name?.trim() || reporter?.username?.trim() || 'Pengguna',
     reporterClass: profile?.class?.trim() || null,
     createdAt: row.created_at,
+    verifiedBy: row.verified_by,
+    rejectedBy: row.rejected_by,
+    updatedBy: row.updated_by,
     votes: first(row.reports_votes)?.count ?? 0,
     comments: first(row.reports_comments)?.count ?? 0,
     recommendations: first(row.recommendations)?.count ?? 0,
