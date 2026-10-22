@@ -33,6 +33,8 @@ import { ReportDashboardService } from './report-dashboard.service';
 import { UpdateReportDto } from './dto/update-report.dto';
 import { ReportNotesService } from './report-notes.service';
 import { CreateReportNoteDto } from './dto/create-report-note.dto';
+import { ReportEvaluasiService } from './report-evaluasi.service';
+import { CreateEvaluasiDto } from './dto/create-evaluasi.dto';
 
 @Controller('reports')
 export class ReportsController {
@@ -43,6 +45,7 @@ export class ReportsController {
     private readonly reportCommentsService: ReportCommentsService,
     private readonly reportDashboardService: ReportDashboardService,
     private readonly reportNotesService: ReportNotesService,
+    private readonly reportEvaluasiService: ReportEvaluasiService,
   ) {}
 
   //Report
@@ -205,5 +208,24 @@ export class ReportsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.reportNotesService.remove(user, id);
+  }
+
+  // Report Evaluasi
+  @Post(':id/evaluasi')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  createEvaluasi(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateEvaluasiDto,
+  ) {
+    return this.reportEvaluasiService.create(user, id, dto);
+  }
+
+  @Get(':id/evaluasi')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  listEvaluasi(@Param('id', ParseUUIDPipe) id: string) {
+    return this.reportEvaluasiService.list(id);
   }
 }
