@@ -52,6 +52,7 @@ export type FeedReportRow = {
     author_id: string;
     note_text: string | null;
     created_at: string;
+    is_delete: boolean | null;
   }>;
 };
 
@@ -97,6 +98,7 @@ export function toFeedReport(
 ): FeedReport {
   const reporter = first(row.reporter);
   const profile = first(reporter?.profile);
+
   return {
     id: row.id,
     reporter_id: row.reporter_id,
@@ -116,17 +118,23 @@ export function toFeedReport(
     votedByMe,
     recommendedByMe,
     note: (() => {
-      const note = first(row.reports_notes);
+      const notes = Array.isArray(row.reports_notes)
+        ? row.reports_notes
+        : row.reports_notes
+          ? [row.reports_notes]
+          : [];
 
-      if (!note) {
-        return null;
-      }
+      const activeNote = notes.find(
+        (item) => item.is_delete === false || item.is_delete === null,
+      );
+
+      if (!activeNote) return null;
 
       return {
-        id: note.id,
-        authorId: note.author_id,
-        text: note.note_text ?? '',
-        createdAt: note.created_at,
+        id: activeNote.id,
+        authorId: activeNote.author_id,
+        text: activeNote.note_text ?? '',
+        createdAt: activeNote.created_at,
       };
     })(),
   };

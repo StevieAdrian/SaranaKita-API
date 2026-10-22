@@ -31,6 +31,12 @@ export class ReportNotesService {
       throw new NotFoundException('Laporan tidak ditemukan.');
     }
 
+    if (report.reporter_id !== user.id) {
+      throw new ForbiddenException(
+        'Kamu hanya dapat mengelola catatan pada laporan milikmu sendiri.',
+      );
+    }
+
     const createdAt = new Date(report.created_at).getTime();
 
     if (!Number.isFinite(createdAt) || Date.now() < createdAt + NOTE_DELAY_MS) {
@@ -59,6 +65,7 @@ export class ReportNotesService {
       .from('reports_notes')
       .select('id')
       .eq('report_id', reportId)
+      .eq('is_delete', false)
       .maybeSingle();
 
     if (findError) throw findError;
@@ -101,6 +108,7 @@ export class ReportNotesService {
       .from('reports_notes')
       .select('id, author_id')
       .eq('report_id', reportId)
+      .eq('is_delete', false)
       .maybeSingle();
 
     if (findError) throw findError;
@@ -135,6 +143,7 @@ export class ReportNotesService {
       .from('reports_notes')
       .select('id, author_id')
       .eq('report_id', reportId)
+      .eq('is_delete', false)
       .maybeSingle();
 
     if (findError) throw findError;
@@ -149,13 +158,19 @@ export class ReportNotesService {
       );
     }
 
-    const { error } = await this.client
+    const { data, error } = await this.client
       .from('reports_notes')
-      .delete()
+      .update({ is_delete: true })
       .eq('id', existing.id)
-      .eq('author_id', user.id);
+      .eq('author_id', user.id)
+      .eq('is_delete', false)
+      .select('id')
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) {
+      throw new NotFoundException('Catatan tidak ditemukan.');
+    }
 
     return { message: 'Catatan berhasil dihapus.' };
   }
