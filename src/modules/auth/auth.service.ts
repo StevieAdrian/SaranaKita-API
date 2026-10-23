@@ -35,14 +35,19 @@ export class AuthService {
     if (!clean || clean.length < 3) {
       return { available: false, username: clean };
     }
-    const { data } = await this.supabaseService
+    const { data, error } = await this.supabaseService
       .getAdminClient()
       .from('user')
       .select('id')
       .ilike('username', clean)
-      .maybeSingle();
+      .limit(1);
 
-    return { available: !data, username: clean };
+    if (error) {
+      this.logger.error(`Error checking username "${clean}": ${error.message}`);
+      return { available: false, username: clean };
+    }
+
+    return { available: !data || data.length === 0, username: clean };
   }
 
   async checkEmail(email: string): Promise<{ available: boolean; email: string }> {
@@ -50,21 +55,26 @@ export class AuthService {
     if (!clean) {
       return { available: false, email: clean };
     }
-    const { data } = await this.supabaseService
+    const { data, error } = await this.supabaseService
       .getAdminClient()
       .from('user')
       .select('id')
       .eq('email', clean)
-      .maybeSingle();
+      .limit(1);
 
-    return { available: !data, email: clean };
+    if (error) {
+      this.logger.error(`Error checking email "${clean}": ${error.message}`);
+      return { available: false, email: clean };
+    }
+
+    return { available: !data || data.length === 0, email: clean };
   }
 
   async register(dto: RegisterDto): Promise<SignInResponse> {
     const client = this.supabaseService.getAdminClient();
     const email = dto.email.trim().toLowerCase();
     const username = dto.username.trim().toLowerCase();
-    const fullName = `${dto.firstName} ${dto.lastName}`.trim();
+    const fullName = `${dto.firstName.trim()} ${(dto.lastName || '').trim()}`.trim();
 
     const usernameCheck = await this.checkUsername(username);
     if (!usernameCheck.available) {
@@ -92,8 +102,13 @@ export class AuthService {
       email_confirm: true,
       user_metadata: {
         full_name: fullName,
+        first_name: dto.firstName.trim(),
+        last_name: (dto.lastName || '').trim() || undefined,
         phone: dto.phone,
         gender: genderLabel,
+        is_delete: false,
+        is_active: true,
+        status: 'active',
       },
     });
 
@@ -130,18 +145,19 @@ export class AuthService {
       throw new BadRequestException(`Gagal menyimpan profil: ${profileError.message}`);
     }
 
-    const { data: defaultSchool } = await client
+    const { data: defaultSchools } = await client
       .from('school')
       .select('id')
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
 
-    const schoolId = defaultSchool?.id ?? '904ee228-d0f9-44b5-9e8b-b09d2164ef42';
+    const schoolId = defaultSchools?.[0]?.id;
 
-    await client.from('siswa').upsert({
-      user_id: userId,
-      school_id: schoolId,
-    });
+    if (schoolId) {
+      await client.from('siswa').upsert({
+        user_id: userId,
+        school_id: schoolId,
+      });
+    }
 
     return this.signIn({ email, password: dto.password });
   }
@@ -159,6 +175,35 @@ export class AuthService {
         this.logger.warn(`Sign-in failed: ${error.message}`);
       }
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    let isDeletedInDb = false;
+    let isInactiveInDb = false;
+    if (typeof this.supabaseService.getAdminClient === 'function') {
+      try {
+        const { data: userRows } = await this.supabaseService
+          .getAdminClient()
+          .from('user')
+          .select('id, is_delete, is_active')
+          .eq('id', data.user.id)
+          .limit(1);
+
+        const foundUser = (userRows as Array<{ is_delete?: boolean; is_active?: boolean }> | null)?.[0];
+        isDeletedInDb = foundUser?.is_delete === true;
+        isInactiveInDb = foundUser?.is_active === false;
+      } catch { }
+    }
+    const isDeletedInMeta = data.user.user_metadata?.is_delete === true;
+    const isInactiveInMeta =
+      data.user.user_metadata?.is_active === false ||
+      data.user.user_metadata?.status === 'inactive';
+
+    if (isDeletedInDb || isDeletedInMeta) {
+      throw new UnauthorizedException('Akun telah dihapus.');
+    }
+
+    if (isInactiveInDb || isInactiveInMeta) {
+      throw new UnauthorizedException('Akun Anda telah dinonaktifkan. Silakan hubungi Staff atau Administrator.');
     }
 
     return this.toSessionResponse(data.session, data.user);

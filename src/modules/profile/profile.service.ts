@@ -29,6 +29,8 @@ export type FullUserProfile = {
   id: string;
   email: string;
   fullName: string;
+  firstName?: string;
+  lastName?: string;
   role: UserRole | null;
   phone: string;
   birthDate: string;
@@ -145,6 +147,10 @@ export class ProfileService {
       authUser?.phone ||
       '';
     const gender = (authUser?.user_metadata?.gender as string) || '';
+    const firstName =
+      (authUser?.user_metadata?.first_name as string) || undefined;
+    const lastName =
+      (authUser?.user_metadata?.last_name as string) || undefined;
 
     const isStaffOrAdmin = role === 'staff' || role === 'administrator';
 
@@ -201,6 +207,8 @@ export class ProfileService {
         (authUser?.user_metadata?.full_name as string) ??
         row.username ??
         row.email.split('@')[0],
+      firstName,
+      lastName,
       role,
       phone,
       birthDate: profile?.dob ?? '',
@@ -257,6 +265,8 @@ export class ProfileService {
 
     const metadataUpdates: Record<string, unknown> = {};
     if (dto.fullName !== undefined) metadataUpdates.full_name = dto.fullName;
+    if (dto.firstName !== undefined) metadataUpdates.first_name = dto.firstName;
+    if (dto.lastName !== undefined) metadataUpdates.last_name = dto.lastName;
     if (dto.phone !== undefined) metadataUpdates.phone = dto.phone;
     if (dto.gender !== undefined) metadataUpdates.gender = dto.gender;
     if (dto.classOrPosition !== undefined) {

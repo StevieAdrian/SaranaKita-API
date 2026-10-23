@@ -32,6 +32,10 @@ const row: ReportDetailRow = {
   reports_votes: [{ count: 34 }],
   reports_comments: [{ count: 6 }],
   recommendations: [{ count: 11 }],
+  verified_by: null,
+  rejected_by: null,
+  updated_by: null,
+  reports_notes: [],
 };
 
 describe('toReportDetail', () => {
@@ -60,6 +64,10 @@ describe('toReportDetail', () => {
         { type: 'in_repair', at: '2026-07-25T01:00:00Z' },
         { type: 'created', at: '2026-07-24T01:00:00Z' },
       ],
+      verifiedBy: null,
+      rejectedBy: null,
+      updatedBy: null,
+      note: null,
     });
   });
 
