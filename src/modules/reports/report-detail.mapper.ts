@@ -12,6 +12,9 @@ export type ReportDetailRow = {
   image_url: string | null;
   created_at: string;
   updated_at: string | null;
+  verified_by: string | null;
+  rejected_by: string | null;
+  updated_by: string | null;
   status: Related<{ status_name: string | null }>;
   category: Related<{ id: string; category_name: string | null }>;
   reporter: Related<{
@@ -26,6 +29,13 @@ export type ReportDetailRow = {
   reports_votes: Related<{ count: number }>;
   reports_comments: Related<{ count: number }>;
   recommendations: Related<{ count: number }>;
+  reports_notes: Related<{
+    id: string;
+    author_id: string;
+    note_text: string | null;
+    created_at: string;
+    is_delete: boolean | null;
+  }>;
 };
 
 export type ReportTimelineEvent = {
@@ -53,7 +63,16 @@ export type ReportDetail = {
   comments: number;
   recommendations: number;
   votedByMe: boolean;
+  verifiedBy: string | null;
+  rejectedBy: string | null;
+  updatedBy: string | null;
   timeline: ReportTimelineEvent[];
+  note: {
+    id: string;
+    authorId: string;
+    text: string;
+    createdAt: string;
+  } | null;
 };
 
 export const REPORT_DETAIL_SELECT = [
@@ -65,12 +84,16 @@ export const REPORT_DETAIL_SELECT = [
   'image_url',
   'created_at',
   'updated_at',
+  'verified_by',
+  'rejected_by',
+  'updated_by',
   'status(status_name)',
   'category(id, category_name)',
   'reporter:user!report_reporter_id_fkey(username, roles(role_name), profile(full_name, class, profile_pict))',
   'reports_votes(count)',
   'reports_comments(count)',
   'recommendations(count)',
+  'reports_notes(id, author_id, note_text, created_at, is_delete)',
 ].join(', ');
 
 function first<T>(value: Related<T>): T | null {
@@ -97,6 +120,24 @@ export function toReportDetail(
   const profile = first(reporter?.profile);
   const category = first(row.category);
   const status = toReportStatus(first(row.status)?.status_name);
+  const notes = Array.isArray(row.reports_notes)
+    ? row.reports_notes
+    : row.reports_notes
+      ? [row.reports_notes]
+      : [];
+
+  const noteRow = notes.find(
+    (item) => item.is_delete === false || item.is_delete === null,
+  );
+
+  const note = noteRow
+    ? {
+        id: noteRow.id,
+        authorId: noteRow.author_id,
+        text: noteRow.note_text ?? '',
+        createdAt: noteRow.created_at,
+      }
+    : null;
 
   return {
     id: row.id,
@@ -121,6 +162,10 @@ export function toReportDetail(
     comments: first(row.reports_comments)?.count ?? 0,
     recommendations: first(row.recommendations)?.count ?? 0,
     votedByMe,
+    verifiedBy: row.verified_by,
+    rejectedBy: row.rejected_by,
+    updatedBy: row.updated_by,
     timeline: buildTimeline(status, row.created_at, row.updated_at),
+    note,
   };
 }

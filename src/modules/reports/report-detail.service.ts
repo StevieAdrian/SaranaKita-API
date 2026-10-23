@@ -81,6 +81,8 @@ export class ReportDetailService {
         status_id: (status as { id: string }).id,
         is_validate: dto.statusName !== 'Menunggu Verifikasi',
         updated_at: new Date().toISOString(),
+        updated_by: user.id,
+        ...(dto.statusName === 'Ditolak' ? { rejected_by: user.id } : dto.statusName !== 'Menunggu Verifikasi' ? { verified_by: user.id } : {}),
       })
       .eq('id', reportId);
     if (user.role !== 'administrator') {

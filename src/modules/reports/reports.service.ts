@@ -54,7 +54,7 @@ export class ReportsService {
         image_public_id: dto.imagePublicId ?? null,
       })
       .select(
-        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url,image_public_id, is_validate, created_at',
+        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url,image_public_id, is_validate, created_at, verified_by, rejected_by, updated_by',
       )
       .single();
 
@@ -84,7 +84,7 @@ export class ReportsService {
     const { data: existing, error: findError } = await client
       .from(this.table)
       .select(
-        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url, image_public_id, is_validate, created_at',
+        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url, image_public_id, is_validate, created_at, verified_by, rejected_by, updated_by',
       )
       .eq('id', reportId)
       .eq('school_id', schoolId)
@@ -156,6 +156,9 @@ export class ReportsService {
       throw new BadRequestException('Tidak ada perubahan untuk disimpan.');
     }
 
+    patch.updated_by = user.id;
+    patch.updated_at = new Date().toISOString();
+
     const { data: updated, error: updateError } = await client
       .from(this.table)
       .update(patch)
@@ -163,7 +166,7 @@ export class ReportsService {
       .eq('reporter_id', user.id)
       .eq('school_id', schoolId)
       .select(
-        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url, is_validate, created_at',
+        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url, is_validate, created_at, verified_by, rejected_by, updated_by',
       )
       .maybeSingle();
 
@@ -224,6 +227,9 @@ export class ReportsService {
       imageUrl: row.image_url,
       isValidated: row.is_validate,
       createdAt: row.created_at,
+      verifiedBy: row.verified_by,
+      rejectedBy: row.rejected_by,
+      updatedBy: row.updated_by,
     };
   }
 }

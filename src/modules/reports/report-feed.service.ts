@@ -27,11 +27,15 @@ const FEED_SELECT = [
   'category_id',
   'image_url',
   'created_at',
+  'verified_by',
+  'rejected_by',
+  'updated_by',
   'status(status_name)',
   'reporter:user!report_reporter_id_fkey(username, profile(full_name, class))',
   'reports_votes(count)',
   'reports_comments(count)',
   'recommendations(count)',
+  'reports_notes(id, author_id, note_text, created_at, is_delete)',
 ].join(', ');
 
 const POPULAR_CANDIDATES = 200;
@@ -49,7 +53,10 @@ export class ReportFeedService {
     user: AuthUser,
     query: ListReportsQueryDto,
   ): Promise<PaginatedResult<FeedReport>> {
-    const schoolId = user.role === 'administrator' ? null : await this.schoolMembership.getSchoolId(user.id);
+    const schoolId =
+      user.role === 'administrator'
+        ? null
+        : await this.schoolMembership.getSchoolId(user.id);
     const { page, limit } = query;
     const sort = query.sort ?? 'latest';
     const from = (page - 1) * limit;
@@ -268,14 +275,12 @@ export class ReportFeedService {
       }
     } else {
       const statusId = await this.getRecommendationStatusId();
-      const { error } = await client
-        .from('recommendations')
-        .insert({
-          report_id: reportId,
-          guru_id: user.id,
-          status_id: statusId,
-          reason,
-        });
+      const { error } = await client.from('recommendations').insert({
+        report_id: reportId,
+        guru_id: user.id,
+        status_id: statusId,
+        reason,
+      });
       if (error) {
         throw error;
       }

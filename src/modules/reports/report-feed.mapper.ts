@@ -39,6 +39,9 @@ export type FeedReportRow = {
   category_id: string | null;
   image_url: string | null;
   created_at: string;
+  verified_by: string | null;
+  rejected_by: string | null;
+  updated_by: string | null;
   status: Related<{ status_name: string | null }>;
   reporter: Related<{
     username: string | null;
@@ -47,6 +50,13 @@ export type FeedReportRow = {
   reports_votes: Related<{ count: number }>;
   reports_comments: Related<{ count: number }>;
   recommendations: Related<{ count: number }>;
+  reports_notes: Related<{
+    id: string;
+    author_id: string;
+    note_text: string | null;
+    created_at: string;
+    is_delete: boolean | null;
+  }>;
 };
 
 export type FeedReport = {
@@ -61,11 +71,20 @@ export type FeedReport = {
   reporterName: string;
   reporterClass: string | null;
   createdAt: string;
+  verifiedBy: string | null;
+  rejectedBy: string | null;
+  updatedBy: string | null;
   votes: number;
   comments: number;
   recommendations: number;
   votedByMe: boolean;
   recommendedByMe: boolean;
+  note: {
+    id: string;
+    authorId: string;
+    text: string;
+    createdAt: string;
+  } | null;
 };
 
 export type VoteResult = {
@@ -85,6 +104,7 @@ export function toFeedReport(
 ): FeedReport {
   const reporter = first(row.reporter);
   const profile = first(reporter?.profile);
+
   return {
     id: row.id,
     reporter_id: row.reporter_id,
@@ -98,11 +118,34 @@ export function toFeedReport(
       profile?.full_name?.trim() || reporter?.username?.trim() || 'Pengguna',
     reporterClass: profile?.class?.trim() || null,
     createdAt: row.created_at,
+    verifiedBy: row.verified_by,
+    rejectedBy: row.rejected_by,
+    updatedBy: row.updated_by,
     votes: first(row.reports_votes)?.count ?? 0,
     comments: first(row.reports_comments)?.count ?? 0,
     recommendations: first(row.recommendations)?.count ?? 0,
     votedByMe,
     recommendedByMe,
+    note: (() => {
+      const notes = Array.isArray(row.reports_notes)
+        ? row.reports_notes
+        : row.reports_notes
+          ? [row.reports_notes]
+          : [];
+
+      const activeNote = notes.find(
+        (item) => item.is_delete === false || item.is_delete === null,
+      );
+
+      if (!activeNote) return null;
+
+      return {
+        id: activeNote.id,
+        authorId: activeNote.author_id,
+        text: activeNote.note_text ?? '',
+        createdAt: activeNote.created_at,
+      };
+    })(),
   };
 }
 
@@ -113,3 +156,5 @@ export function toSearchTerm(search: string | undefined): string | null {
     .trim();
   return cleaned || null;
 }
+
+//untuk report notes
