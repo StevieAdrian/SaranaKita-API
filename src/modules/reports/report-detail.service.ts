@@ -75,14 +75,19 @@ export class ReportDetailService {
       throw new BadRequestException('Status laporan tidak ditemukan.');
     }
 
+    const auditFields = {
+      updated_by: user.id,
+      ...(dto.statusName === 'Dalam Pemeriksaan' ? { verified_by: user.id } : {}),
+      ...(dto.statusName === 'Ditolak' ? { rejected_by: user.id } : {}),
+    };
+
     const reportQuery = client
       .from('report')
       .update({
         status_id: (status as { id: string }).id,
         is_validate: dto.statusName !== 'Menunggu Verifikasi',
         updated_at: new Date().toISOString(),
-        updated_by: user.id,
-        ...(dto.statusName === 'Ditolak' ? { rejected_by: user.id } : dto.statusName !== 'Menunggu Verifikasi' ? { verified_by: user.id } : {}),
+        ...auditFields,
       })
       .eq('id', reportId);
     if (user.role !== 'administrator') {
