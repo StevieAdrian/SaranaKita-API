@@ -35,6 +35,7 @@ import { ReportNotesService } from './report-notes.service';
 import { CreateReportNoteDto } from './dto/create-report-note.dto';
 import { ReportEvaluasiService } from './report-evaluasi.service';
 import { CreateEvaluasiDto } from './dto/create-evaluasi.dto';
+import { ReportMonitoringService } from './report-monitoring.service';
 
 @Controller('reports')
 export class ReportsController {
@@ -46,6 +47,7 @@ export class ReportsController {
     private readonly reportDashboardService: ReportDashboardService,
     private readonly reportNotesService: ReportNotesService,
     private readonly reportEvaluasiService: ReportEvaluasiService,
+    private readonly reportMonitoringService: ReportMonitoringService,
   ) {}
 
   //Report
@@ -228,4 +230,13 @@ export class ReportsController {
   listEvaluasi(@Param('id', ParseUUIDPipe) id: string) {
     return this.reportEvaluasiService.list(id);
   }
+
+  //Report Monitor
+  @Get('monitoring')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  getMonitoring(@CurrentUser() user: AuthUser) {
+    return this.reportMonitoringService.getMonitoring(user);
+  }
+
 }
