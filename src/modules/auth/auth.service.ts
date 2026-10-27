@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { Session, User } from '@supabase/supabase-js';
 import { SupabaseService } from '../../supabase/supabase.service';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface';
@@ -7,6 +7,8 @@ import { UserRoleService } from '../roles/user-role.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import type {
   AuthUserResponse,
   MeResponse,
@@ -38,16 +40,17 @@ export class AuthService {
     const { data, error } = await this.supabaseService
       .getAdminClient()
       .from('user')
-      .select('id')
+      .select('id, is_verified')
       .ilike('username', clean)
       .limit(1);
 
     if (error) {
-      this.logger.error(`Error checking username "${clean}": ${error.message}`);
+      this.logger.error(`Gagal memeriksa ketersediaan username "${clean}": ${error.message}`);
       return { available: false, username: clean };
     }
 
-    return { available: !data || data.length === 0, username: clean };
+    const existing = data?.[0];
+    return { available: !existing || !existing.is_verified, username: clean };
   }
 
   async checkEmail(email: string): Promise<{ available: boolean; email: string }> {
@@ -58,16 +61,17 @@ export class AuthService {
     const { data, error } = await this.supabaseService
       .getAdminClient()
       .from('user')
-      .select('id')
+      .select('id, is_verified')
       .eq('email', clean)
       .limit(1);
 
     if (error) {
-      this.logger.error(`Error checking email "${clean}": ${error.message}`);
+      this.logger.error(`Gagal memeriksa ketersediaan email "${clean}": ${error.message}`);
       return { available: false, email: clean };
     }
 
-    return { available: !data || data.length === 0, email: clean };
+    const existing = data?.[0];
+    return { available: !existing || !existing.is_verified, email: clean };
   }
 
   async register(dto: RegisterDto): Promise<SignInResponse> {
@@ -76,14 +80,32 @@ export class AuthService {
     const username = dto.username.trim().toLowerCase();
     const fullName = `${dto.firstName.trim()} ${(dto.lastName || '').trim()}`.trim();
 
-    const usernameCheck = await this.checkUsername(username);
-    if (!usernameCheck.available) {
-      throw new BadRequestException('Username sudah digunakan');
-    }
+    const { data: existingUsers } = await client
+      .from('user')
+      .select('id, email, username, is_verified')
+      .or(`username.ilike.${username},email.eq.${email}`);
 
-    const emailCheck = await this.checkEmail(email);
-    if (!emailCheck.available) {
-      throw new BadRequestException('Email sudah terdaftar');
+    if (existingUsers && existingUsers.length > 0) {
+      for (const existing of existingUsers) {
+        if (!existing.is_verified) {
+          this.logger.log(
+            `Menghapus akun pendaftaran lama yang belum diverifikasi: ID=${existing.id}, email=${existing.email}, username=${existing.username}`,
+          );
+          try {
+            await client.from('siswa').delete().eq('user_id', existing.id);
+            await client.from('profile').delete().eq('user_id', existing.id);
+            await client.from('user').delete().eq('id', existing.id);
+            await client.auth.admin.deleteUser(existing.id);
+          } catch (cleanErr: any) {
+            this.logger.warn(`Tidak dapat menghapus data akun lama yang belum diverifikasi: ${cleanErr?.message}`);
+          }
+        } else {
+          if (existing.email === email) {
+            throw new BadRequestException('Email sudah terdaftar');
+          }
+          throw new BadRequestException('Username sudah digunakan');
+        }
+      }
     }
 
     const roleId = await this.userRoleService.getRoleId('siswa');
@@ -99,7 +121,7 @@ export class AuthService {
     const authRes = await client.auth.admin.createUser({
       email,
       password: dto.password,
-      email_confirm: true,
+      email_confirm: false,
       user_metadata: {
         full_name: fullName,
         first_name: dto.firstName.trim(),
@@ -113,9 +135,15 @@ export class AuthService {
     });
 
     if (authRes.error || !authRes.data.user) {
-      throw new BadRequestException(
-        authRes.error?.message ?? 'Gagal membuat user autentikasi.',
-      );
+      this.logger.error(`Gagal membuat akun autentikasi untuk ${email}: ${authRes.error?.message}`);
+      const rawMsg = (authRes.error?.message ?? '').toLowerCase();
+      let indonesianMsg = 'Gagal memproses pendaftaran akun. Silakan coba beberapa saat lagi.';
+      if (rawMsg.includes('already') || rawMsg.includes('registered')) {
+        indonesianMsg = 'Email sudah terdaftar dalam sistem.';
+      } else if (rawMsg.includes('password')) {
+        indonesianMsg = 'Kata sandi tidak memenuhi kriteria (minimal 8 karakter).';
+      }
+      throw new BadRequestException(indonesianMsg);
     }
 
     const userId = authRes.data.user.id;
@@ -126,11 +154,12 @@ export class AuthService {
       username,
       password: dto.password,
       role_id: roleId,
-      is_verified: true,
+      is_verified: false,
     });
 
     if (userError) {
-      throw new BadRequestException(`Gagal menyimpan data pengguna: ${userError.message}`);
+      this.logger.error(`Gagal menyimpan data pengguna: ${email}: ${userError.message}`);
+      throw new BadRequestException('Terjadi kendala saat menyimpan data akun pengguna. Silakan coba lagi.');
     }
 
     const { error: profileError } = await client.from('profile').upsert({
@@ -142,7 +171,8 @@ export class AuthService {
     });
 
     if (profileError) {
-      throw new BadRequestException(`Gagal menyimpan profil: ${profileError.message}`);
+      this.logger.error(`Gagal menyimpan data profil pengguna untuk ${email}: ${profileError.message}`);
+      throw new BadRequestException('Terjadi kendala saat menyimpan data profil pengguna. Silakan coba lagi.');
     }
 
     const { data: defaultSchools } = await client
@@ -159,38 +189,212 @@ export class AuthService {
       });
     }
 
+    try {
+      const anonClient = this.supabaseService.createAnonClient();
+      const { error: resendError } = await anonClient.auth.resend({
+        type: 'signup',
+        email,
+      });
+      if (resendError) {
+        this.logger.warn(
+          `Pengiriman email OTP pendaftaran ke ${email} terkendala: ${resendError.message}`,
+        );
+      } else {
+        this.logger.log(`Email OTP pendaftaran berhasil dikirimkan ke ${email}`);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Terjadi kendala saat mengirimkan email OTP ke ${email}: ${err?.message}`);
+    }
+
     return this.signIn({ email, password: dto.password });
   }
 
+  async resendOtp(
+    email: string,
+    type: 'signup' | 'recovery' = 'signup',
+  ): Promise<{ success: boolean; message: string }> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!cleanEmail) {
+      throw new BadRequestException('Email wajib diisi.');
+    }
+    const anonClient = this.supabaseService.createAnonClient();
+    if (type === 'recovery') {
+      const { error } = await anonClient.auth.resetPasswordForEmail(cleanEmail);
+      if (error) {
+        this.logger.warn(`Gagal mengirim ulang kode OTP pemulihan ke ${cleanEmail}: ${error.message}`);
+        const rawMsg = (error.message || '').toLowerCase();
+        if (rawMsg.includes('security') || rawMsg.includes('rate limit')) {
+          throw new BadRequestException('Terlalu banyak permintaan. Silakan tunggu beberapa saat sebelum mencoba lagi.');
+        }
+        throw new BadRequestException('Gagal mengirim ulang kode OTP pemulihan kata sandi.');
+      }
+    } else {
+      const { error } = await anonClient.auth.resend({
+        type: 'signup',
+        email: cleanEmail,
+      });
+      if (error) {
+        this.logger.warn(`Gagal mengirim ulang kode OTP pendaftaran ke ${cleanEmail}: ${error.message}`);
+        const rawMsg = (error.message || '').toLowerCase();
+        if (rawMsg.includes('security') || rawMsg.includes('rate limit')) {
+          throw new BadRequestException('Terlalu banyak permintaan. Silakan tunggu beberapa saat sebelum mencoba lagi.');
+        }
+        throw new BadRequestException('Gagal mengirim ulang kode OTP pendaftaran.');
+      }
+    }
+    return { success: true, message: 'Kode OTP telah berhasil dikirim ulang ke email Anda.' };
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ success: boolean; message: string }> {
+    const cleanEmail = (dto.email || '').trim().toLowerCase();
+    if (!cleanEmail) {
+      throw new BadRequestException('Email wajib diisi.');
+    }
+
+    const client = this.supabaseService.getAdminClient();
+    const { data: userRows, error } = await client
+      .from('user')
+      .select('id, email, is_delete, is_active, is_verified')
+      .ilike('email', cleanEmail)
+      .limit(1);
+
+    if (error) {
+      this.logger.error(`Gagal memeriksa akun untuk lupa kata sandi (${cleanEmail}): ${error.message}`);
+      throw new BadRequestException('Terjadi kendala saat memeriksa data akun. Silakan coba beberapa saat lagi.');
+    }
+
+    const foundUser = (userRows as Array<{ id: string; email: string; is_delete?: boolean; is_active?: boolean; is_verified?: boolean }> | null)?.[0];
+
+    if (!foundUser) {
+      throw new NotFoundException('Email tidak terdaftar dalam sistem.');
+    }
+
+    if (foundUser.is_delete === true) {
+      throw new BadRequestException('Akun telah dihapus.');
+    }
+
+    if (foundUser.is_active === false) {
+      throw new BadRequestException('Akun Anda telah dinonaktifkan. Silakan hubungi Administrator.');
+    }
+
+    if (foundUser.is_verified === false) {
+      throw new BadRequestException('Akun belum diverifikasi. Silakan lakukan aktivasi pendaftaran terlebih dahulu.');
+    }
+
+    const anonClient = this.supabaseService.createAnonClient();
+    const { error: resetError } = await anonClient.auth.resetPasswordForEmail(cleanEmail);
+
+    if (resetError) {
+      this.logger.warn(`Gagal memicu email pemulihan kata sandi untuk ${cleanEmail}: ${resetError.message}`);
+      const rawMsg = (resetError.message || '').toLowerCase();
+      if (rawMsg.includes('security') || rawMsg.includes('rate limit')) {
+        throw new BadRequestException('Terlalu banyak permintaan. Silakan tunggu beberapa saat sebelum mencoba lagi.');
+      }
+      throw new BadRequestException('Gagal memproses pemulihan kata sandi. Silakan coba lagi nanti.');
+    }
+
+    this.logger.log(`Kode OTP pemulihan kata sandi berhasil dikirim ke ${cleanEmail}`);
+    return {
+      success: true,
+      message: 'Kode OTP pemulihan kata sandi telah dikirim ke email Anda.',
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ success: boolean; message: string }> {
+    const cleanEmail = (dto.email || '').trim().toLowerCase();
+    if (!cleanEmail) {
+      throw new BadRequestException('Email wajib diisi.');
+    }
+
+    const client = this.supabaseService.getAdminClient();
+    const { data: userRows, error } = await client
+      .from('user')
+      .select('id, email, is_delete, is_active, is_verified')
+      .ilike('email', cleanEmail)
+      .limit(1);
+
+    if (error || !userRows || userRows.length === 0) {
+      throw new NotFoundException('Pengguna tidak ditemukan.');
+    }
+
+    const foundUser = userRows[0];
+    if (foundUser.is_delete === true || foundUser.is_active === false) {
+      throw new BadRequestException('Akun tidak aktif.');
+    }
+
+    const { error: authUpdateError } = await client.auth.admin.updateUserById(foundUser.id, {
+      password: dto.newPassword,
+    });
+
+    if (authUpdateError) {
+      this.logger.error(`Gagal memperbarui kata sandi di Supabase Auth untuk ${cleanEmail}: ${authUpdateError.message}`);
+      const rawMsg = (authUpdateError.message || '').toLowerCase();
+      let errorMsg = 'Gagal memperbarui kata sandi. Pastikan kata sandi baru memenuhi kriteria minimal 8 karakter.';
+      if (rawMsg.includes('same password')) {
+        errorMsg = 'Kata sandi baru tidak boleh sama dengan kata sandi sebelumnya.';
+      }
+      throw new BadRequestException(errorMsg);
+    }
+
+    const { error: dbUpdateError } = await client
+      .from('user')
+      .update({ password: dto.newPassword })
+      .eq('id', foundUser.id);
+
+    if (dbUpdateError) {
+      this.logger.warn(`Gagal mengupdate kata sandi ke database untuk ${cleanEmail}: ${dbUpdateError.message}`);
+    }
+
+    this.logger.log(`Kata sandi akun ${cleanEmail} berhasil diupdate.`);
+    return {
+      success: true,
+      message: 'Kata sandi berhasil diupdate. Silakan login kembali dengan kata sandi baru Anda.',
+    };
+  }
+
   async signIn(dto: SignInDto): Promise<SignInResponse> {
+    const cleanEmail = dto.email.trim().toLowerCase();
     const { data, error } = await this.supabaseService
       .createAnonClient()
       .auth.signInWithPassword({
-        email: dto.email.trim().toLowerCase(),
+        email: cleanEmail,
         password: dto.password,
       });
 
     if (error || !data.session || !data.user) {
       if (error) {
-        this.logger.warn(`Sign-in failed: ${error.message}`);
+        this.logger.warn(`Login failed untuk ${cleanEmail}: ${error.message}`);
+        if (error.message.toLowerCase().includes('email not confirmed')) {
+          throw new UnauthorizedException({
+            statusCode: 401,
+            code: 'EMAIL_NOT_VERIFIED',
+            message: 'Email belum diverifikasi. Silakan masukkan kode OTP Anda.',
+            email: cleanEmail,
+          });
+        }
       }
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Email atau kata sandi yang Anda masukkan salah.');
     }
 
     let isDeletedInDb = false;
     let isInactiveInDb = false;
+    let isVerifiedInDb = true;
+
     if (typeof this.supabaseService.getAdminClient === 'function') {
       try {
         const { data: userRows } = await this.supabaseService
           .getAdminClient()
           .from('user')
-          .select('id, is_delete, is_active')
+          .select('id, is_delete, is_active, is_verified')
           .eq('id', data.user.id)
           .limit(1);
 
-        const foundUser = (userRows as Array<{ is_delete?: boolean; is_active?: boolean }> | null)?.[0];
+        const foundUser = (userRows as Array<{ is_delete?: boolean; is_active?: boolean; is_verified?: boolean }> | null)?.[0];
         isDeletedInDb = foundUser?.is_delete === true;
         isInactiveInDb = foundUser?.is_active === false;
+        if (foundUser && foundUser.is_verified === false) {
+          isVerifiedInDb = false;
+        }
       } catch { }
     }
     const isDeletedInMeta = data.user.user_metadata?.is_delete === true;
@@ -206,6 +410,15 @@ export class AuthService {
       throw new UnauthorizedException('Akun Anda telah dinonaktifkan. Silakan hubungi Staff atau Administrator.');
     }
 
+    if (!isVerifiedInDb) {
+      throw new UnauthorizedException({
+        statusCode: 401,
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Email belum diverifikasi. Silakan masukkan kode OTP Anda.',
+        email: cleanEmail,
+      });
+    }
+
     return this.toSessionResponse(data.session, data.user);
   }
 
@@ -216,9 +429,9 @@ export class AuthService {
 
     if (error || !data.session || !data.user) {
       if (error) {
-        this.logger.warn(`Token refresh failed: ${error.message}`);
+        this.logger.warn(`Pembaruan sesi login (token refresh) gagal: ${error.message}`);
       }
-      throw new UnauthorizedException('Invalid or expired refresh token');
+      throw new UnauthorizedException('Sesi login Anda telah berakhir. Silakan masuk kembali.');
     }
 
     return this.toSessionResponse(data.session, data.user);
