@@ -49,6 +49,8 @@ export type FullUserProfile = {
     reportsCreated: number;
     votesCount: number;
     recommendationsCount: number;
+    reportsRejected?: number;
+    reportsVerified?: number;
     'Menunggu Verifikasi': number;
     'Dalam Pemeriksaan': number;
     'Dalam Perbaikan': number;
@@ -152,7 +154,9 @@ export class ProfileService {
     const lastName =
       (authUser?.user_metadata?.last_name as string) || undefined;
 
-    const isStaffOrAdmin = role === 'staff' || role === 'administrator';
+    const isStaff = role === 'staff';
+    const isAdmin = role === 'administrator';
+    const isStaffOrAdmin = isStaff || isAdmin;
 
     let statusReportsQuery = client
       .from('report')
@@ -163,22 +167,40 @@ export class ProfileService {
       statusReportsQuery = statusReportsQuery.eq('reporter_id', userId);
     }
 
-    const [reportsCountRes, votesRes, recommsRes, userReportsRes] =
-      await Promise.all([
-        client
-          .from('report')
-          .select('id', { count: 'exact', head: true })
-          .eq('reporter_id', userId),
-        client
-          .from('reports_votes')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', userId),
-        client
-          .from('recommendations')
-          .select('id', { count: 'exact', head: true })
-          .eq('guru_id', userId),
-        statusReportsQuery,
-      ]);
+    if (isStaffOrAdmin) {
+      await this.reconcileReviewers(client, schoolId);
+    }
+
+    const [
+      reportsCountRes,
+      votesRes,
+      recommsRes,
+      statusReportsRes,
+      staffRejectedRes,
+      staffVerifiedRes,
+    ] = await Promise.all([
+      client
+        .from('report')
+        .select('id', { count: 'exact', head: true })
+        .eq('reporter_id', userId),
+      client
+        .from('reports_votes')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId),
+      client
+        .from('recommendations')
+        .select('id', { count: 'exact', head: true })
+        .eq('guru_id', userId),
+      statusReportsQuery,
+      client
+        .from('report')
+        .select('id', { count: 'exact', head: true })
+        .eq('rejected_by', userId),
+      client
+        .from('report')
+        .select('id', { count: 'exact', head: true })
+        .eq('verified_by', userId),
+    ]);
 
     const statusCounts = {
       'Menunggu Verifikasi': 0,
@@ -188,7 +210,7 @@ export class ProfileService {
       'Ditolak': 0,
     };
 
-    for (const r of (userReportsRes.data ?? []) as Array<{
+    for (const r of (statusReportsRes.data ?? []) as Array<{
       status: Related<{ status_name: string | null }>;
     }>) {
       const s = (first(r.status)?.status_name ?? '').toLowerCase();
@@ -198,6 +220,13 @@ export class ProfileService {
       else if (s.includes('selesai')) statusCounts['Selesai']++;
       else if (s.includes('tolak')) statusCounts['Ditolak']++;
     }
+
+    const finalRejected = isStaff
+      ? (staffRejectedRes.count ?? 0)
+      : statusCounts['Ditolak'];
+    const finalVerified = isStaff
+      ? (staffVerifiedRes.count ?? 0)
+      : statusCounts['Selesai'];
 
     return {
       id: row.id,
@@ -225,7 +254,13 @@ export class ProfileService {
         reportsCreated: reportsCountRes.count ?? 0,
         votesCount: votesRes.count ?? 0,
         recommendationsCount: recommsRes.count ?? 0,
-        ...statusCounts,
+        reportsRejected: staffRejectedRes.count ?? 0,
+        reportsVerified: staffVerifiedRes.count ?? 0,
+        'Menunggu Verifikasi': statusCounts['Menunggu Verifikasi'],
+        'Dalam Pemeriksaan': statusCounts['Dalam Pemeriksaan'],
+        'Dalam Perbaikan': statusCounts['Dalam Perbaikan'],
+        'Selesai': finalVerified,
+        'Ditolak': finalRejected,
       },
     };
   }
@@ -268,7 +303,16 @@ export class ProfileService {
     if (dto.firstName !== undefined) metadataUpdates.first_name = dto.firstName;
     if (dto.lastName !== undefined) metadataUpdates.last_name = dto.lastName;
     if (dto.phone !== undefined) metadataUpdates.phone = dto.phone;
-    if (dto.gender !== undefined) metadataUpdates.gender = dto.gender;
+    if (dto.gender !== undefined) {
+      let genderLabel = dto.gender;
+      const lowerGender = (dto.gender || '').trim().toLowerCase();
+      if (lowerGender === 'female' || lowerGender === 'perempuan') {
+        genderLabel = 'Perempuan';
+      } else if (lowerGender === 'male' || lowerGender === 'laki-laki') {
+        genderLabel = 'Laki-Laki';
+      }
+      metadataUpdates.gender = genderLabel;
+    }
     if (dto.classOrPosition !== undefined) {
       metadataUpdates.classOrPosition = dto.classOrPosition;
       metadataUpdates.jabatan = dto.classOrPosition;
@@ -345,9 +389,80 @@ export class ProfileService {
       .eq('id', userId);
 
     if (userTableErr) {
-      this.logger.warn(`Failed to update password in user table: ${userTableErr.message}`);
+      this.logger.warn(`Gagal mengupdate password di table user: ${userTableErr.message}`);
     }
 
     return { message: 'Kata sandi berhasil diperbarui.' };
+  }
+
+  private async reconcileReviewers(
+    client: any,
+    schoolId: string | null,
+  ): Promise<void> {
+    try {
+      let rejectedQuery = client
+        .from('report')
+        .select('id, updated_by, status!inner(status_name)')
+        .is('rejected_by', null)
+        .not('updated_by', 'is', null)
+        .eq('status.status_name', 'Ditolak');
+
+      if (schoolId) {
+        rejectedQuery = rejectedQuery.eq('school_id', schoolId);
+      }
+
+      let verifiedQuery = client
+        .from('report')
+        .select('id, updated_by, status!inner(status_name)')
+        .is('verified_by', null)
+        .not('updated_by', 'is', null)
+        .neq('status.status_name', 'Menunggu Verifikasi')
+        .neq('status.status_name', 'Ditolak');
+
+      if (schoolId) {
+        verifiedQuery = verifiedQuery.eq('school_id', schoolId);
+      }
+
+      const [unlinkedRejectedRes, unlinkedVerifiedRes] = await Promise.all([
+        rejectedQuery,
+        verifiedQuery,
+      ]);
+
+      const updates: Promise<any>[] = [];
+
+      for (const r of (unlinkedRejectedRes.data ?? []) as Array<{
+        id: string;
+        updated_by: string;
+      }>) {
+        if (r.updated_by) {
+          updates.push(
+            client
+              .from('report')
+              .update({ rejected_by: r.updated_by })
+              .eq('id', r.id),
+          );
+        }
+      }
+
+      for (const r of (unlinkedVerifiedRes.data ?? []) as Array<{
+        id: string;
+        updated_by: string;
+      }>) {
+        if (r.updated_by) {
+          updates.push(
+            client
+              .from('report')
+              .update({ verified_by: r.updated_by })
+              .eq('id', r.id),
+          );
+        }
+      }
+
+      if (updates.length > 0) {
+        await Promise.all(updates);
+      }
+    } catch (err: any) {
+      this.logger.warn(`reconcileReviewers error: ${err?.message || err}`);
+    }
   }
 }

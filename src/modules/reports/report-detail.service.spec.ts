@@ -5,10 +5,10 @@ import { toReportDetail, type ReportDetailRow } from './report-detail.mapper';
 import { ReportDetailService } from './report-detail.service';
 
 jest.mock('../../supabase/supabase.service', () => ({
-  SupabaseService: class {},
+  SupabaseService: class { },
 }));
 jest.mock('../schools/school-membership.service', () => ({
-  SchoolMembershipService: class {},
+  SchoolMembershipService: class { },
 }));
 
 const row: ReportDetailRow = {
@@ -100,7 +100,7 @@ describe('toReportDetail', () => {
 
 function chain(result: { data?: unknown; error?: unknown; count?: number }) {
   const c: Record<string, jest.Mock> & { then?: unknown } = {};
-  for (const method of ['select', 'eq']) {
+  for (const method of ['select', 'eq', 'update']) {
     c[method] = jest.fn(() => c);
   }
   c.maybeSingle = jest.fn().mockResolvedValue(result);
@@ -113,6 +113,7 @@ function setup(report: { data: unknown; error: unknown }, voteCount = 0) {
   const chains = {
     report: chain(report),
     reports_votes: chain({ count: voteCount, error: null }),
+    status: chain({ data: { id: 'status-1' }, error: null }),
   };
   const supabase = {
     getAdminClient: () => ({
@@ -142,6 +143,72 @@ describe('ReportDetailService.findOne', () => {
     const { service } = setup({ data: null, error: null });
     await expect(service.findOne(user, 'r9')).rejects.toBeInstanceOf(
       NotFoundException,
+    );
+  });
+
+  it('reconciles missing rejected_by when status is Ditolak and updated_by is present', async () => {
+    const rejectedRow = {
+      ...row,
+      status: { status_name: 'Ditolak' },
+      rejected_by: null,
+      updated_by: 'staff-audit-1',
+    };
+    const { service, chains } = setup({ data: rejectedRow, error: null });
+    const detail = await service.findOne(user, 'r1');
+
+    expect(chains.report.update).toHaveBeenCalledWith({
+      rejected_by: 'staff-audit-1',
+    });
+    expect(detail.rejectedBy).toBe('staff-audit-1');
+  });
+
+  it('reconciles missing verified_by when status is <> Menunggu Verifikasi && <> Ditolak and updated_by is present', async () => {
+    const verifiedRow = {
+      ...row,
+      status: { status_name: 'Dalam Perbaikan' },
+      verified_by: null,
+      updated_by: 'staff-audit-2',
+    };
+    const { service, chains } = setup({ data: verifiedRow, error: null });
+    const detail = await service.findOne(user, 'r1');
+
+    expect(chains.report.update).toHaveBeenCalledWith({
+      verified_by: 'staff-audit-2',
+    });
+    expect(detail.verifiedBy).toBe('staff-audit-2');
+  });
+});
+
+describe('ReportDetailService.updateStatus', () => {
+  const user = { id: 'staff-99', role: 'staff' };
+
+  it('sets rejected_by to user.id when changing status to Ditolak', async () => {
+    const { service, chains } = setup({
+      data: { ...row, status: { status_name: 'Ditolak' }, rejected_by: 'staff-99' },
+      error: null,
+    });
+    await service.updateStatus(user as any, 'r1', { statusName: 'Ditolak' });
+
+    expect(chains.report.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rejected_by: 'staff-99',
+        updated_by: 'staff-99',
+      }),
+    );
+  });
+
+  it('sets verified_by to user.id when changing status to Dalam Pemeriksaan', async () => {
+    const { service, chains } = setup({
+      data: { ...row, status: { status_name: 'Dalam Pemeriksaan' }, verified_by: 'staff-99' },
+      error: null,
+    });
+    await service.updateStatus(user as any, 'r1', { statusName: 'Dalam Pemeriksaan' });
+
+    expect(chains.report.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verified_by: 'staff-99',
+        updated_by: 'staff-99',
+      }),
     );
   });
 });

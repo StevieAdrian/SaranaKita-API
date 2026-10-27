@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { PaginatedResult, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { toUserRole } from '../../common/utils/resolve-role';
@@ -73,6 +73,7 @@ function labelClassOrPosition(
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
   private readonly table = 'user';
 
   constructor(
@@ -122,7 +123,8 @@ export class UsersService {
     }
 
     if (error) {
-      throw error;
+      this.logger.error(`Gagal memuat daftar pengguna: ${error.message}`);
+      throw new BadRequestException(`Gagal memuat data pengguna: ${error.message}`);
     }
 
     const items = ((data as UserRow[] | null) ?? [])
@@ -191,10 +193,11 @@ export class UsersService {
       .maybeSingle();
 
     if (error) {
-      throw error;
+      this.logger.error(`Gagal memuat pengguna dengan ID ${id}: ${error.message}`);
+      throw new BadRequestException(`Gagal memuat pengguna: ${error.message}`);
     }
     if (!data) {
-      throw new NotFoundException(`User ${id} not found`);
+      throw new NotFoundException(`Pengguna dengan ID ${id} tidak ditemukan.`);
     }
 
     return this.toEntity(data as unknown as UserRow);
@@ -274,8 +277,13 @@ export class UsersService {
     });
 
     if (authRes.error || !authRes.data.user) {
+      this.logger.error(
+        `Gagal membuat akun autentikasi pengguna: ${authRes.error?.message ?? 'Unknown error'}`,
+      );
       throw new BadRequestException(
-        authRes.error?.message ?? 'Gagal membuat user auth.',
+        authRes.error?.message
+          ? `Gagal membuat akun autentikasi: ${authRes.error.message}`
+          : 'Gagal membuat akun autentikasi pengguna.',
       );
     }
 
@@ -304,8 +312,9 @@ export class UsersService {
     }
 
     if (userError) {
+      this.logger.error(`Gagal menyimpan data pengguna: ${userError.message}`);
       throw new BadRequestException(
-        `Gagal menyimpan user: ${userError.message}`,
+        `Gagal menyimpan data pengguna: ${userError.message}`,
       );
     }
 
@@ -322,32 +331,55 @@ export class UsersService {
       .upsert(profilePayload);
 
     if (profileError) {
+      this.logger.error(`Gagal menyimpan data profil: ${profileError.message}`);
       throw new BadRequestException(
         `Gagal menyimpan profil: ${profileError.message}`,
       );
     }
 
+    let defaultSchoolId: string | null = null;
     const { data: defaultSchools } = await client
       .from('school')
       .select('id')
+      .order('created_at', { ascending: true })
       .limit(1);
 
-    const defaultSchool = defaultSchools?.[0];
+    if (defaultSchools && defaultSchools.length > 0) {
+      defaultSchoolId = defaultSchools[0].id;
+    } else {
+      const { data: fallbackSchools } = await client
+        .from('school')
+        .select('id')
+        .limit(1);
+      defaultSchoolId = fallbackSchools?.[0]?.id ?? null;
+    }
 
-    if (defaultSchool?.id) {
-      if (dto.role === 'siswa') {
-        await client
+    if (defaultSchoolId) {
+      const normalizedRole = (dto.role || '').toLowerCase();
+      if (normalizedRole === 'siswa') {
+        const { error: memErr } = await client
           .from('siswa')
-          .upsert({ user_id: userId, school_id: defaultSchool.id });
-      } else if (dto.role === 'guru') {
-        await client
+          .upsert({ user_id: userId, school_id: defaultSchoolId });
+        if (memErr) {
+          this.logger.error(`Gagal menetapkan siswa ke sekolah: ${memErr.message}`);
+        }
+      } else if (normalizedRole === 'guru') {
+        const { error: memErr } = await client
           .from('guru')
-          .upsert({ user_id: userId, school_id: defaultSchool.id });
-      } else if (dto.role === 'staff') {
-        await client
+          .upsert({ user_id: userId, school_id: defaultSchoolId });
+        if (memErr) {
+          this.logger.error(`Gagal menetapkan guru ke sekolah: ${memErr.message}`);
+        }
+      } else if (normalizedRole === 'staff') {
+        const { error: memErr } = await client
           .from('staff')
-          .upsert({ user_id: userId, school_id: defaultSchool.id });
+          .upsert({ user_id: userId, school_id: defaultSchoolId });
+        if (memErr) {
+          this.logger.error(`Gagal menetapkan staff ke sekolah: ${memErr.message}`);
+        }
       }
+    } else {
+      this.logger.warn('Tidak ditemukan sekolah default untuk ditautkan ke pengguna baru.');
     }
 
     return this.findOne(userId);
@@ -367,7 +399,55 @@ export class UsersService {
         .update({ role_id: roleId })
         .eq('id', id);
       if (error) {
-        throw error;
+        this.logger.error(`Gagal memperbarui role pengguna ${id}: ${error.message}`);
+        throw new BadRequestException(`Gagal memperbarui role pengguna: ${error.message}`);
+      }
+
+      if (dto.role !== existing.role) {
+        if (existing.role === 'siswa') await client.from('siswa').delete().eq('user_id', id);
+        else if (existing.role === 'guru') await client.from('guru').delete().eq('user_id', id);
+        else if (existing.role === 'staff') await client.from('staff').delete().eq('user_id', id);
+
+        const { data: defaultSchools } = await client
+          .from('school')
+          .select('id')
+          .order('created_at', { ascending: true })
+          .limit(1);
+        const defaultSchoolId = defaultSchools?.[0]?.id;
+        if (defaultSchoolId) {
+          const targetRole = dto.role.toLowerCase();
+          if (targetRole === 'siswa') {
+            const { error: memErr } = await client.from('siswa').upsert({ user_id: id, school_id: defaultSchoolId });
+            if (memErr) this.logger.error(`Gagal menetapkan siswa ke sekolah: ${memErr.message}`);
+          } else if (targetRole === 'guru') {
+            const { error: memErr } = await client.from('guru').upsert({ user_id: id, school_id: defaultSchoolId });
+            if (memErr) this.logger.error(`Gagal menetapkan guru ke sekolah: ${memErr.message}`);
+          } else if (targetRole === 'staff') {
+            const { error: memErr } = await client.from('staff').upsert({ user_id: id, school_id: defaultSchoolId });
+            if (memErr) this.logger.error(`Gagal menetapkan staff ke sekolah: ${memErr.message}`);
+          }
+        } else {
+          this.logger.warn(`Tidak ditemukan sekolah default saat memperbarui role pengguna ${id}.`);
+        }
+      }
+    }
+
+    const currentRole = (dto.role || existing.role || '').toLowerCase();
+    if (currentRole === 'siswa' || currentRole === 'guru' || currentRole === 'staff') {
+      const checkMem = await client.from(currentRole).select('school_id').eq('user_id', id).maybeSingle();
+      if (!checkMem.data?.school_id) {
+        const { data: defaultSchools } = await client
+          .from('school')
+          .select('id')
+          .order('created_at', { ascending: true })
+          .limit(1);
+        const defaultSchoolId = defaultSchools?.[0]?.id;
+        if (defaultSchoolId) {
+          const { error: memErr } = await client.from(currentRole).upsert({ user_id: id, school_id: defaultSchoolId });
+          if (memErr) this.logger.error(`Gagal menetapkan ${currentRole} ke sekolah: ${memErr.message}`);
+        } else {
+          this.logger.warn(`Tidak ditemukan sekolah default untuk ${currentRole} dengan ID ${id}.`);
+        }
       }
     }
 
@@ -389,7 +469,8 @@ export class UsersService {
         .update({ username: cleanUsername })
         .eq('id', id);
       if (error) {
-        throw error;
+        this.logger.error(`Gagal memperbarui username pengguna ${id}: ${error.message}`);
+        throw new BadRequestException(`Gagal memperbarui username pengguna: ${error.message}`);
       }
     }
 
@@ -434,7 +515,8 @@ export class UsersService {
         .from('profile')
         .upsert({ user_id: id, ...updates }, { onConflict: 'user_id' });
       if (error) {
-        throw error;
+        this.logger.error(`Gagal memperbarui data profil pengguna ${id}: ${error.message}`);
+        throw new BadRequestException(`Gagal memperbarui data profil pengguna: ${error.message}`);
       }
     }
 
@@ -474,8 +556,18 @@ export class UsersService {
     }
 
     if (Object.keys(metadataUpdates).length > 0) {
+      const existingAuthUser = await client.auth.admin
+        .getUserById(id)
+        .then((r) => r.data?.user)
+        .catch(() => null);
+
+      const mergedMetadata = {
+        ...(existingAuthUser?.user_metadata ?? {}),
+        ...metadataUpdates,
+      };
+
       await client.auth.admin
-        .updateUserById(id, { user_metadata: metadataUpdates })
+        .updateUserById(id, { user_metadata: mergedMetadata })
         .catch(() => { });
     }
 
@@ -495,7 +587,8 @@ export class UsersService {
       .eq('id', id);
 
     if (error) {
-      throw new BadRequestException(`Gagal menghapus user: ${error.message}`);
+      this.logger.error(`Gagal menghapus pengguna ${id}: ${error.message}`);
+      throw new BadRequestException(`Gagal menghapus pengguna: ${error.message}`);
     }
 
     await client.auth.admin
