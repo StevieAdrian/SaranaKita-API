@@ -60,6 +60,7 @@ describe('toReportDetail', () => {
       comments: 6,
       recommendations: 11,
       votedByMe: true,
+      recommendedByMe: false,
       timeline: [
         { type: 'in_repair', at: '2026-07-25T01:00:00Z' },
         { type: 'created', at: '2026-07-24T01:00:00Z' },
@@ -96,6 +97,11 @@ describe('toReportDetail', () => {
       avatarUrl: null,
     });
   });
+
+  it('passes recommendedByMe flag when true', () => {
+    const detail = toReportDetail(row, false, true);
+    expect(detail.recommendedByMe).toBe(true);
+  });
 });
 
 function chain(result: { data?: unknown; error?: unknown; count?: number }) {
@@ -109,10 +115,15 @@ function chain(result: { data?: unknown; error?: unknown; count?: number }) {
   return c;
 }
 
-function setup(report: { data: unknown; error: unknown }, voteCount = 0) {
+function setup(
+  report: { data: unknown; error: unknown },
+  voteCount = 0,
+  recommendationCount = 0,
+) {
   const chains = {
     report: chain(report),
     reports_votes: chain({ count: voteCount, error: null }),
+    recommendations: chain({ count: recommendationCount, error: null }),
     status: chain({ data: { id: 'status-1' }, error: null }),
   };
   const supabase = {
@@ -137,6 +148,21 @@ describe('ReportDetailService.findOne', () => {
     expect(chains.report.eq).toHaveBeenCalledWith('school_id', 'school-1');
     expect(chains.reports_votes.eq).toHaveBeenCalledWith('user_id', 'user-1');
     expect(detail.votedByMe).toBe(true);
+    expect(detail.recommendedByMe).toBe(false);
+  });
+
+  it('queries recommendations and returns recommendedByMe as true for guru', async () => {
+    const guruUser = { id: 'guru-1', role: 'guru' as const };
+    const { service, chains } = setup({ data: row, error: null }, 0, 1);
+    const detail = await service.findOne(guruUser, 'r1');
+
+    expect(chains.recommendations.select).toHaveBeenCalledWith('id', {
+      count: 'exact',
+      head: true,
+    });
+    expect(chains.recommendations.eq).toHaveBeenCalledWith('guru_id', 'guru-1');
+    expect(chains.recommendations.eq).toHaveBeenCalledWith('report_id', 'r1');
+    expect(detail.recommendedByMe).toBe(true);
   });
 
   it('throws NotFound for reports in other schools', async () => {
@@ -184,7 +210,11 @@ describe('ReportDetailService.updateStatus', () => {
 
   it('sets rejected_by to user.id when changing status to Ditolak', async () => {
     const { service, chains } = setup({
-      data: { ...row, status: { status_name: 'Ditolak' }, rejected_by: 'staff-99' },
+      data: {
+        ...row,
+        status: { status_name: 'Ditolak' },
+        rejected_by: 'staff-99',
+      },
       error: null,
     });
     await service.updateStatus(user as any, 'r1', { statusName: 'Ditolak' });
@@ -199,10 +229,16 @@ describe('ReportDetailService.updateStatus', () => {
 
   it('sets verified_by to user.id when changing status to Dalam Pemeriksaan', async () => {
     const { service, chains } = setup({
-      data: { ...row, status: { status_name: 'Dalam Pemeriksaan' }, verified_by: 'staff-99' },
+      data: {
+        ...row,
+        status: { status_name: 'Dalam Pemeriksaan' },
+        verified_by: 'staff-99',
+      },
       error: null,
     });
-    await service.updateStatus(user as any, 'r1', { statusName: 'Dalam Pemeriksaan' });
+    await service.updateStatus(user as any, 'r1', {
+      statusName: 'Dalam Pemeriksaan',
+    });
 
     expect(chains.report.update).toHaveBeenCalledWith(
       expect.objectContaining({

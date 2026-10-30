@@ -10,6 +10,7 @@ import { RegisterDto } from './dto/register.dto';
 import { SwitchRoleDto } from './dto/switch-role.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { CompleteGoogleProfileDto } from './dto/complete-google-profile.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -78,6 +79,15 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
     return this.authService.me(user);
+  }
+
+  @Post('complete-google-profile')
+  @HttpCode(HttpStatus.OK)
+  completeGoogleProfile(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CompleteGoogleProfileDto,
+  ) {
+    return this.authService.completeGoogleProfile(user, dto);
   }
 
   @Post('dev/switch-role')

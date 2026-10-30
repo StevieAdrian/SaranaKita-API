@@ -71,4 +71,3 @@ export class UploadsController {
     return this.cloudinaryService.uploadImage(file.buffer, AVATAR_IMAGE_FOLDER, publicId);
   }
 }
-
