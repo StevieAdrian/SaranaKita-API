@@ -353,7 +353,10 @@ export class ProfileService {
     userId: string,
     email: string | undefined,
     dto: ChangePasswordDto,
-  ): Promise<{ message: string }> {
+  ): Promise<{
+    message: string;
+    tokens?: { accessToken: string; refreshToken: string };
+  }> {
     const admin = this.supabaseService.getAdminClient();
     let targetEmail = email?.trim().toLowerCase();
     if (!targetEmail) {
@@ -395,7 +398,28 @@ export class ProfileService {
       );
     }
 
-    return { message: 'Kata sandi berhasil diperbarui.' };
+    let freshTokens: { accessToken: string; refreshToken: string } | undefined;
+    try {
+      const { data: newSessionData } = await anon.auth.signInWithPassword({
+        email: targetEmail,
+        password: dto.newPassword,
+      });
+      if (newSessionData?.session) {
+        freshTokens = {
+          accessToken: newSessionData.session.access_token,
+          refreshToken: newSessionData.session.refresh_token,
+        };
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Gagal membuat token sesi baru setelah perubahan kata sandi: ${err?.message || err}`,
+      );
+    }
+
+    return {
+      message: 'Kata sandi berhasil diperbarui.',
+      ...(freshTokens ? { tokens: freshTokens } : {}),
+    };
   }
 
   private async reconcileReviewers(
