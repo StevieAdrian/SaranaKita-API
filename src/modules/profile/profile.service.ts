@@ -71,14 +71,15 @@ export class ProfileService {
   async getProfile(userId: string): Promise<FullUserProfile> {
     const client = this.supabaseService.getAdminClient();
 
-    const { data: userRow, error: userError } = await client
+    const { data: userRows, error: userError } = await client
       .from('user')
       .select(
         'id, email, username, roles(role_name), profile(full_name, nickname, class, dob, profile_pict)',
       )
       .eq('id', userId)
-      .maybeSingle();
+      .limit(1);
 
+    const userRow = userRows?.[0];
     if (userError || !userRow) {
       throw new NotFoundException('Data pengguna tidak ditemukan.');
     }
@@ -102,39 +103,44 @@ export class ProfileService {
       const [siswa, guru, staff] = await Promise.all([
         client
           .from('siswa')
-          .select('school_id, school(id, school_name, school_code, school_address)')
+          .select('school_id, school(*)')
           .eq('user_id', userId)
-          .maybeSingle(),
+          .limit(1),
         client
           .from('guru')
-          .select('school_id, school(id, school_name, school_code, school_address)')
+          .select('school_id, school(*)')
           .eq('user_id', userId)
-          .maybeSingle(),
+          .limit(1),
         client
           .from('staff')
-          .select('school_id, school(id, school_name, school_code, school_address)')
+          .select('school_id, school(*)')
           .eq('user_id', userId)
-          .maybeSingle(),
+          .limit(1),
       ]);
 
-      const membership = siswa.data ?? guru.data ?? staff.data;
+      const membership = siswa.data?.[0] ?? guru.data?.[0] ?? staff.data?.[0];
       schoolId = membership?.school_id ?? null;
       const schoolData = membership?.school;
-      const school = first(schoolData as Related<{
-        id: string;
-        school_name: string | null;
-        school_code: string | null;
-        school_address: string | null;
-      }>);
+      const school = first(
+        schoolData as Related<{
+          id: string;
+          school_name: string | null;
+          school_address: string | null;
+          npsn?: string | null;
+          principal?: string | null;
+          phone?: string | null;
+          accreditation?: string | null;
+        }>,
+      );
 
       if (school) {
         schoolInfo = {
           name: school.school_name ?? 'Belum Terhubung Sekolah',
           address: school.school_address ?? '-',
-          npsn: school.school_code ?? '-',
-          principal: '-',
-          phone: '-',
-          accreditation: '-',
+          npsn: school.npsn ?? '-',
+          principal: school.principal ?? '-',
+          phone: school.phone ?? '-',
+          accreditation: school.accreditation ?? '-',
         };
       }
     } catch { }
@@ -145,9 +151,7 @@ export class ProfileService {
       .catch(() => null);
 
     const phone =
-      (authUser?.user_metadata?.phone as string) ||
-      authUser?.phone ||
-      '';
+      (authUser?.user_metadata?.phone as string) || authUser?.phone || '';
     const gender = (authUser?.user_metadata?.gender as string) || '';
     const firstName =
       (authUser?.user_metadata?.first_name as string) || undefined;
@@ -290,7 +294,10 @@ export class ProfileService {
 
     const { error: profileError } = await client
       .from('profile')
-      .upsert({ user_id: userId, ...profileUpdates }, { onConflict: 'user_id' });
+      .upsert(
+        { user_id: userId, ...profileUpdates },
+        { onConflict: 'user_id' },
+      );
 
     if (profileError) {
       throw new BadRequestException(
@@ -347,15 +354,21 @@ export class ProfileService {
     email: string | undefined,
     dto: ChangePasswordDto,
   ): Promise<{ message: string }> {
-    let targetEmail = email;
+    const admin = this.supabaseService.getAdminClient();
+    let targetEmail = email?.trim().toLowerCase();
     if (!targetEmail) {
-      const userRes = await this.supabaseService
-        .getAdminClient()
+      const authUserRes = await admin.auth.admin
+        .getUserById(userId)
+        .catch(() => null);
+      targetEmail = authUserRes?.data?.user?.email?.trim().toLowerCase();
+    }
+    if (!targetEmail) {
+      const userRes = await admin
         .from('user')
         .select('email')
         .eq('id', userId)
-        .maybeSingle();
-      targetEmail = userRes.data?.email;
+        .limit(1);
+      targetEmail = userRes.data?.[0]?.email?.trim().toLowerCase();
     }
 
     if (!targetEmail) {
@@ -372,7 +385,6 @@ export class ProfileService {
       throw new UnauthorizedException('Kata sandi saat ini tidak valid.');
     }
 
-    const admin = this.supabaseService.getAdminClient();
     const { error: updateErr } = await admin.auth.admin.updateUserById(userId, {
       password: dto.newPassword,
     });
@@ -381,15 +393,6 @@ export class ProfileService {
       throw new BadRequestException(
         updateErr.message ?? 'Gagal memperbarui kata sandi.',
       );
-    }
-
-    const { error: userTableErr } = await admin
-      .from('user')
-      .update({ password: dto.newPassword })
-      .eq('id', userId);
-
-    if (userTableErr) {
-      this.logger.warn(`Gagal mengupdate password di table user: ${userTableErr.message}`);
     }
 
     return { message: 'Kata sandi berhasil diperbarui.' };

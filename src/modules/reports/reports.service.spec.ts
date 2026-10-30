@@ -7,18 +7,18 @@ import { ReportsService } from './reports.service';
 import { SchoolMembershipService } from '../schools/school-membership.service';
 
 jest.mock('../../supabase/supabase.service', () => ({
-  SupabaseService: class {},
+  SupabaseService: class { },
 }));
 jest.mock('../../cloudinary/cloudinary.service', () => ({
-  CloudinaryService: class {},
+  CloudinaryService: class { },
 }));
-jest.mock('@nestjs/config', () => ({ ConfigService: class {} }));
+jest.mock('@nestjs/config', () => ({ ConfigService: class { } }));
 
 type Result = { data: unknown; error: unknown };
 
 function chain(result: Result) {
   const c: Record<string, jest.Mock> = {};
-  for (const method of ['select', 'eq', 'limit', 'insert']) {
+  for (const method of ['select', 'eq', 'limit', 'insert', 'update']) {
     c[method] = jest.fn(() => c);
   }
   c.maybeSingle = jest.fn().mockResolvedValue(result);
@@ -65,6 +65,12 @@ function setup(overrides: Partial<Record<string, Result>> = {}) {
       overrides.category ?? { data: { id: baseDto.categoryId }, error: null },
     ),
     report: chain(overrides.report ?? { data: insertedRow, error: null }),
+    status: chain(
+      overrides.status ?? {
+        data: { status_name: 'waiting_verification' },
+        error: null,
+      },
+    ),
   };
   const supabase = {
     getAdminClient: () => ({ from: (table: string) => chains[table] }),
@@ -139,5 +145,53 @@ describe('ReportsService.create', () => {
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(deleteImage).toHaveBeenCalledWith(PUBLIC_ID);
+  });
+});
+
+describe('ReportsService.update', () => {
+  it('allows updating when within the 15-minute window', async () => {
+    const recentReport = {
+      ...insertedRow,
+      created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    };
+    const { service, chains } = setup({
+      report: { data: recentReport, error: null },
+    });
+
+    const result = await service.update(USER, 'report-1', {
+      title: 'Judul Baru',
+    });
+
+    expect(chains.report.update).toHaveBeenCalled();
+    expect(result).toBeDefined();
+  });
+
+  it('rejects updating when after the 15-minute window', async () => {
+    const oldReport = {
+      ...insertedRow,
+      created_at: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+    };
+    const { service } = setup({
+      report: { data: oldReport, error: null },
+    });
+
+    await expect(
+      service.update(USER, 'report-1', { title: 'Judul Baru' }),
+    ).rejects.toThrow('Laporan hanya dapat diedit dalam 15 menit setelah dibuat.');
+  });
+
+  it('rejects updating when report has already been validated', async () => {
+    const validatedReport = {
+      ...insertedRow,
+      is_validate: true,
+      created_at: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+    };
+    const { service } = setup({
+      report: { data: validatedReport, error: null },
+    });
+
+    await expect(
+      service.update(USER, 'report-1', { title: 'Judul Baru' }),
+    ).rejects.toThrow('Laporan ini sudah tidak dapat diedit.');
   });
 });

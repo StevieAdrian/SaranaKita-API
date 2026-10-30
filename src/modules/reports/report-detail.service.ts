@@ -31,13 +31,20 @@ export class ReportDetailService {
       const schoolId = await this.schoolMembership.getSchoolId(user.id);
       reportQuery.eq('school_id', schoolId);
     }
-    const [report, myVote] = await Promise.all([
+    const [report, myVote, myRecommendation] = await Promise.all([
       reportQuery.maybeSingle(),
       client
         .from('reports_votes')
         .select('id', { count: 'exact', head: true })
         .eq('report_id', reportId)
         .eq('user_id', user.id),
+      user.role === 'guru'
+        ? client
+          .from('recommendations')
+          .select('id', { count: 'exact', head: true })
+          .eq('report_id', reportId)
+          .eq('guru_id', user.id)
+        : Promise.resolve({ count: 0, error: null }),
     ]);
 
     if (report.error) {
@@ -45,6 +52,9 @@ export class ReportDetailService {
     }
     if (myVote.error) {
       throw myVote.error;
+    }
+    if (myRecommendation.error) {
+      throw myRecommendation.error;
     }
     if (!report.data) {
       throw new NotFoundException('Laporan tidak ditemukan.');
@@ -59,8 +69,7 @@ export class ReportDetailService {
         .update({ rejected_by: row.updated_by })
         .eq('id', reportId);
       row.rejected_by = row.updated_by;
-    }
-    else if (
+    } else if (
       statusName &&
       statusName !== 'Menunggu Verifikasi' &&
       statusName !== 'Ditolak' &&
@@ -77,6 +86,7 @@ export class ReportDetailService {
     return toReportDetail(
       row,
       (myVote.count ?? 0) > 0,
+      (myRecommendation.count ?? 0) > 0,
     );
   }
 
@@ -100,7 +110,7 @@ export class ReportDetailService {
     }
 
     const updatePayload: Record<string, unknown> = {
-      status_id: (status as { id: string }).id,
+      status_id: status.id,
       is_validate: dto.statusName !== 'Menunggu Verifikasi',
       updated_at: new Date().toISOString(),
       updated_by: user.id,
@@ -131,6 +141,6 @@ export class ReportDetailService {
       throw new NotFoundException('Laporan tidak ditemukan.');
     }
 
-    return toReportDetail(data as unknown as ReportDetailRow, false);
+    return toReportDetail(data as unknown as ReportDetailRow, false, false);
   }
 }

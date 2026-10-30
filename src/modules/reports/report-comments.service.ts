@@ -46,7 +46,7 @@ export class ReportCommentsService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly schoolMembership: SchoolMembershipService,
-  ) {}
+  ) { }
 
   async list(user: AuthUser, reportId: string): Promise<ReportComment[]> {
     if (user.role !== 'administrator') {
@@ -64,7 +64,7 @@ export class ReportCommentsService {
     if (error) {
       throw error;
     }
-    return this.withAuthors((data ?? []) as CommentRow[]);
+    return this.withAuthors(data ?? []);
   }
 
   async create(
@@ -96,7 +96,7 @@ export class ReportCommentsService {
       throw new Error('Gagal menyimpan komentar.');
     }
 
-    const [comment] = await this.withAuthors([data as CommentRow]);
+    const [comment] = await this.withAuthors([data]);
     return comment;
   }
 

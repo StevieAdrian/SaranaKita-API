@@ -16,7 +16,7 @@ export class SupabaseAuthGuard implements CanActivate {
     private readonly supabaseService: SupabaseService,
     private readonly userRoleService: UserRoleService,
     private readonly reflector: Reflector,
-  ) {}
+  ) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -41,6 +41,47 @@ export class SupabaseAuthGuard implements CanActivate {
 
     if (error || !data?.user) {
       throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    const authMetadata = data.user.user_metadata;
+    if (authMetadata?.is_delete === true) {
+      throw new UnauthorizedException('Akun telah dihapus.');
+    }
+    if (authMetadata?.is_active === false || authMetadata?.status === 'inactive') {
+      throw new UnauthorizedException('Akun Anda telah dinonaktifkan. Silakan hubungi Staff atau Administrator.');
+    }
+
+    if (typeof (this.supabaseService.getAdminClient() as any)?.from === 'function') {
+      try {
+        const { data: dbUserRows } = await (
+          this.supabaseService.getAdminClient() as any
+        )
+          .from('user')
+          .select('id, is_active, is_delete, is_verified')
+          .eq('id', data.user.id)
+          .limit(1);
+
+        const dbUser = dbUserRows?.[0];
+
+        if (dbUser) {
+          if (dbUser.is_delete === true) {
+            throw new UnauthorizedException('Akun telah dihapus.');
+          }
+          if (dbUser.is_active === false) {
+            throw new UnauthorizedException('Akun Anda telah dinonaktifkan. Silakan hubungi Staff atau Administrator.');
+          }
+          if (dbUser.is_verified === false && data.user.email_confirmed_at) {
+            await (this.supabaseService.getAdminClient() as any)
+              .from('user')
+              .update({ is_verified: true })
+              .eq('id', data.user.id);
+          }
+        }
+      } catch (err) {
+        if (err instanceof UnauthorizedException) {
+          throw err;
+        }
+      }
     }
 
     const authUser: AuthUser = {

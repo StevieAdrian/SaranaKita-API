@@ -8,7 +8,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { UserEntity } from './entities/user.entity';
 
 const USER_SELECT =
-  'id, username, email, is_verified, created_at, roles(role_name), profile(full_name, class, profile_pict)';
+  'id, username, email, is_verified, created_at, is_active, is_delete, roles(role_name), profile(full_name, class, profile_pict)';
 
 type Related<T> = T | T[] | null | undefined;
 
@@ -70,6 +70,8 @@ function labelClassOrPosition(
 
   return text;
 }
+
+export const DEFAULT_USER_PASSWORD = 'SaranaKita123';
 
 @Injectable()
 export class UsersService {
@@ -190,17 +192,18 @@ export class UsersService {
       .from(this.table)
       .select(USER_SELECT)
       .eq('id', id)
-      .maybeSingle();
+      .limit(1);
 
     if (error) {
       this.logger.error(`Gagal memuat pengguna dengan ID ${id}: ${error.message}`);
       throw new BadRequestException(`Gagal memuat pengguna: ${error.message}`);
     }
-    if (!data) {
+    const row = data?.[0];
+    if (!row) {
       throw new NotFoundException(`Pengguna dengan ID ${id} tidak ditemukan.`);
     }
 
-    return this.toEntity(data as unknown as UserRow);
+    return this.toEntity(row);
   }
 
   async create(dto: CreateUserDto): Promise<UserEntity> {
@@ -210,12 +213,13 @@ export class UsersService {
     const client = this.supabaseService.getAdminClient();
     const roleId = await this.userRoleService.getRoleId(dto.role);
 
-    const password = dto.password || 'SaranaKita123';
+    const password = dto.password || DEFAULT_USER_PASSWORD;
     const email = dto.email.trim().toLowerCase();
 
     let fullName = dto.fullName?.trim();
     if (!fullName && (dto.firstName || dto.lastName)) {
-      fullName = `${dto.firstName?.trim() ?? ''} ${dto.lastName?.trim() ?? ''}`.trim();
+      fullName =
+        `${dto.firstName?.trim() ?? ''} ${dto.lastName?.trim() ?? ''}`.trim();
     }
     if (!fullName) {
       fullName = email.split('@')[0];
@@ -293,14 +297,15 @@ export class UsersService {
       id: userId,
       email,
       username: cleanUsername,
-      password,
       role_id: roleId,
       is_verified: true,
       is_delete: false,
       is_active: isActive,
     };
 
-    let { error: userError } = await client.from(this.table).upsert(userPayload);
+    let { error: userError } = await client
+      .from(this.table)
+      .upsert(userPayload);
     if (userError && userError.code === '42703') {
       delete userPayload.is_active;
       let retry = await client.from(this.table).upsert(userPayload);
@@ -433,9 +438,17 @@ export class UsersService {
     }
 
     const currentRole = (dto.role || existing.role || '').toLowerCase();
-    if (currentRole === 'siswa' || currentRole === 'guru' || currentRole === 'staff') {
-      const checkMem = await client.from(currentRole).select('school_id').eq('user_id', id).maybeSingle();
-      if (!checkMem.data?.school_id) {
+    if (
+      currentRole === 'siswa' ||
+      currentRole === 'guru' ||
+      currentRole === 'staff'
+    ) {
+      const checkMem = await client
+        .from(currentRole)
+        .select('school_id')
+        .eq('user_id', id)
+        .limit(1);
+      if (!checkMem.data?.[0]?.school_id) {
         const { data: defaultSchools } = await client
           .from('school')
           .select('id')
@@ -474,15 +487,10 @@ export class UsersService {
       }
     }
 
-    if (dto.password) {
-      await client.auth.admin.updateUserById(id, {
-        password: dto.password,
-      });
-    }
-
     let fullName = dto.fullName?.trim();
     if (!fullName && (dto.firstName || dto.lastName)) {
-      fullName = `${dto.firstName?.trim() ?? ''} ${dto.lastName?.trim() ?? ''}`.trim();
+      fullName =
+        `${dto.firstName?.trim() ?? ''} ${dto.lastName?.trim() ?? ''}`.trim();
     }
 
     if (
