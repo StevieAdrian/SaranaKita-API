@@ -23,6 +23,7 @@ export class ReportNotesService {
       .from('report')
       .select('id, reporter_id, created_at')
       .eq('id', reportId)
+      .eq('is_delete', false)
       .maybeSingle();
 
     if (error) throw error;

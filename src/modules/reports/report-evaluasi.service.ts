@@ -27,6 +27,7 @@ export class ReportEvaluasiService {
       .from('report')
       .select('id, status:status_id(status_name)')
       .eq('id', reportId)
+      .eq('is_delete', false)
       .maybeSingle();
 
     if (reportError) throw reportError;
@@ -92,6 +93,7 @@ export class ReportEvaluasiService {
       .from('report')
       .select('id')
       .eq('id', reportId)
+      .eq('is_delete', false)
       .maybeSingle();
 
     if (reportError) throw reportError;

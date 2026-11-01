@@ -26,7 +26,8 @@ export class ReportDetailService {
     const reportQuery = client
       .from('report')
       .select(REPORT_DETAIL_SELECT)
-      .eq('id', reportId);
+      .eq('id', reportId)
+      .eq('is_delete', false);
     if (user.role !== 'administrator') {
       const schoolId = await this.schoolMembership.getSchoolId(user.id);
       reportQuery.eq('school_id', schoolId);
@@ -125,7 +126,8 @@ export class ReportDetailService {
     const reportQuery = client
       .from('report')
       .update(updatePayload)
-      .eq('id', reportId);
+      .eq('id', reportId)
+      .eq('is_delete', false);
     if (user.role !== 'administrator') {
       const schoolId = await this.schoolMembership.getSchoolId(user.id);
       reportQuery.eq('school_id', schoolId);

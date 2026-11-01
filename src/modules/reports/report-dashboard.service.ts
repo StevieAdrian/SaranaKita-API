@@ -64,7 +64,8 @@ export class ReportDashboardService {
     const countReports = () => {
       const query = client
         .from('report')
-        .select('id', { count: 'exact', head: true });
+        .select('id', { count: 'exact', head: true })
+        .eq('is_delete', false);
       return userSchool ? query.eq('school_id', userSchool.id) : query;
     };
     const [statusResult, categoryResult, totalResult, monthResult] =
@@ -135,6 +136,7 @@ export class ReportDashboardService {
     const urgentQuery = client
       .from('report')
       .select(DASHBOARD_REPORT_SELECT)
+      .eq('is_delete', false)
       .order('created_at', { ascending: false })
       .limit(3)
       .or(

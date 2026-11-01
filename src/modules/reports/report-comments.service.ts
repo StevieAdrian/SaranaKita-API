@@ -111,6 +111,7 @@ export class ReportCommentsService {
       .select('id')
       .eq('id', reportId)
       .eq('school_id', schoolId)
+      .eq('is_delete', false)
       .maybeSingle();
 
     if (error) {

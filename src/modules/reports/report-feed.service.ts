@@ -65,7 +65,8 @@ export class ReportFeedService {
     let builder = this.supabaseService
       .getAdminClient()
       .from('report')
-      .select(FEED_SELECT, { count: 'exact' });
+      .select(FEED_SELECT, { count: 'exact' })
+      .eq('is_delete', false);
 
     if (schoolId) {
       builder = builder.eq('school_id', schoolId);
@@ -173,6 +174,7 @@ export class ReportFeedService {
       .getAdminClient()
       .from('report')
       .select(FEED_SELECT)
+      .eq('is_delete', false)
       .eq('school_id', schoolId);
 
     if (query.categoryId) {
@@ -366,6 +368,7 @@ export class ReportFeedService {
       .select('id')
       .eq('id', reportId)
       .eq('school_id', schoolId)
+      .eq('is_delete', false)
       .maybeSingle();
 
     if (error) {

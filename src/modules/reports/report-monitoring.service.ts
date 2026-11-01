@@ -81,7 +81,8 @@ export class ReportMonitoringService {
     const scopedCount = () => {
       const query = client
         .from('report')
-        .select('id', { count: 'exact', head: true });
+        .select('id', { count: 'exact', head: true })
+        .eq('is_delete', false);
       return schoolId ? query.eq('school_id', schoolId) : query;
     };
 
@@ -142,6 +143,7 @@ export class ReportMonitoringService {
     let query = client
       .from('report')
       .select(MONITORING_SELECT)
+      .eq('is_delete', false)
       .order('updated_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .limit(ACTIVITY_LIMIT);

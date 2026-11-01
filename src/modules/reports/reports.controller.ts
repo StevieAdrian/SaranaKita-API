@@ -98,6 +98,17 @@ export class ReportsController {
     return this.reportsService.update(user, id, dto);
   }
 
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  remove(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reportsService.remove(user, id);
+  }
+
   //Report Detail
   @Patch(':id/status')
   @UseGuards(RolesGuard)

@@ -189,6 +189,62 @@ export class ReportsService {
     return this.toResponse(updated as ReportRow);
   }
 
+  async remove(
+    user: AuthUser,
+    reportId: string,
+  ): Promise<{ message: string }> {
+    const client = this.supabaseService.getAdminClient();
+    const schoolId = await this.schoolMembership.getSchoolId(user.id);
+
+    const { data: existing, error: findError } = await client
+      .from(this.table)
+      .select('id, reporter_id, is_validate, is_delete, created_at')
+      .eq('id', reportId)
+      .eq('school_id', schoolId)
+      .eq('is_delete', false)
+      .maybeSingle();
+
+    if (findError) {
+      throw findError;
+    }
+    if (!existing || existing.is_delete) {
+      throw new NotFoundException('Laporan tidak ditemukan.');
+    }
+    if (existing.reporter_id !== user.id) {
+      throw new ForbiddenException(
+        'Kamu hanya dapat menghapus laporan milikmu sendiri.',
+      );
+    }
+    if (existing.is_validate) {
+      throw new ForbiddenException('Laporan ini sudah tidak dapat dihapus.');
+    }
+
+    const EDIT_WINDOW_MS = 15 * 60 * 1000;
+    const createdAt = new Date(existing.created_at).getTime();
+    if (!Number.isFinite(createdAt) || Date.now() > createdAt + EDIT_WINDOW_MS) {
+      throw new ForbiddenException(
+        'Laporan hanya dapat dihapus dalam 15 menit setelah dibuat.',
+      );
+    }
+
+    const { error: deleteError } = await client
+      .from(this.table)
+      .update({
+        is_delete: true,
+        updated_by: user.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', reportId)
+      .eq('reporter_id', user.id)
+      .eq('school_id', schoolId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    return { message: 'Laporan berhasil dihapus.' };
+  }
+
   private async assertCategoryExists(categoryId: string): Promise<void> {
     const { data, error } = await this.supabaseService
       .getAdminClient()
