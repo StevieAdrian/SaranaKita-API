@@ -19,7 +19,7 @@ export class ReportDetailService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly schoolMembership: SchoolMembershipService,
-  ) {}
+  ) { }
 
   async findOne(user: AuthUser, reportId: string): Promise<ReportDetail> {
     const client = this.supabaseService.getAdminClient();
@@ -31,13 +31,20 @@ export class ReportDetailService {
       const schoolId = await this.schoolMembership.getSchoolId(user.id);
       reportQuery.eq('school_id', schoolId);
     }
-    const [report, myVote] = await Promise.all([
+    const [report, myVote, myRecommendation] = await Promise.all([
       reportQuery.maybeSingle(),
       client
         .from('reports_votes')
         .select('id', { count: 'exact', head: true })
         .eq('report_id', reportId)
         .eq('user_id', user.id),
+      user.role === 'guru'
+        ? client
+          .from('recommendations')
+          .select('id', { count: 'exact', head: true })
+          .eq('report_id', reportId)
+          .eq('guru_id', user.id)
+        : Promise.resolve({ count: 0, error: null }),
     ]);
 
     if (report.error) {
@@ -46,13 +53,40 @@ export class ReportDetailService {
     if (myVote.error) {
       throw myVote.error;
     }
+    if (myRecommendation.error) {
+      throw myRecommendation.error;
+    }
     if (!report.data) {
       throw new NotFoundException('Laporan tidak ditemukan.');
     }
 
+    const row = report.data as unknown as ReportDetailRow;
+    const statusName = (Array.isArray(row.status) ? row.status[0] : row.status)?.status_name;
+
+    if (statusName === 'Ditolak' && !row.rejected_by && row.updated_by) {
+      await client
+        .from('report')
+        .update({ rejected_by: row.updated_by })
+        .eq('id', reportId);
+      row.rejected_by = row.updated_by;
+    } else if (
+      statusName &&
+      statusName !== 'Menunggu Verifikasi' &&
+      statusName !== 'Ditolak' &&
+      !row.verified_by &&
+      row.updated_by
+    ) {
+      await client
+        .from('report')
+        .update({ verified_by: row.updated_by })
+        .eq('id', reportId);
+      row.verified_by = row.updated_by;
+    }
+
     return toReportDetail(
-      report.data as unknown as ReportDetailRow,
+      row,
       (myVote.count ?? 0) > 0,
+      (myRecommendation.count ?? 0) > 0,
     );
   }
 
@@ -75,20 +109,22 @@ export class ReportDetailService {
       throw new BadRequestException('Status laporan tidak ditemukan.');
     }
 
-    const auditFields = {
+    const updatePayload: Record<string, unknown> = {
+      status_id: status.id,
+      is_validate: dto.statusName !== 'Menunggu Verifikasi',
+      updated_at: new Date().toISOString(),
       updated_by: user.id,
-      ...(dto.statusName === 'Dalam Pemeriksaan' ? { verified_by: user.id } : {}),
-      ...(dto.statusName === 'Ditolak' ? { rejected_by: user.id } : {}),
     };
+
+    if (dto.statusName === 'Ditolak') {
+      updatePayload.rejected_by = user.id;
+    } else if (dto.statusName !== 'Menunggu Verifikasi') {
+      updatePayload.verified_by = user.id;
+    }
 
     const reportQuery = client
       .from('report')
-      .update({
-        status_id: (status as { id: string }).id,
-        is_validate: dto.statusName !== 'Menunggu Verifikasi',
-        updated_at: new Date().toISOString(),
-        ...auditFields,
-      })
+      .update(updatePayload)
       .eq('id', reportId);
     if (user.role !== 'administrator') {
       const schoolId = await this.schoolMembership.getSchoolId(user.id);
@@ -105,6 +141,6 @@ export class ReportDetailService {
       throw new NotFoundException('Laporan tidak ditemukan.');
     }
 
-    return toReportDetail(data as unknown as ReportDetailRow, false);
+    return toReportDetail(data as unknown as ReportDetailRow, false, false);
   }
 }

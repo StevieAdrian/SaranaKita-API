@@ -27,7 +27,7 @@ export class ReportsService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly configService: ConfigService,
     private readonly schoolMembership: SchoolMembershipService,
-  ) {}
+  ) { }
 
   async create(user: AuthUser, dto: CreateReportDto): Promise<ReportResponse> {
     if (dto.imageUrl) {
@@ -108,7 +108,15 @@ export class ReportsService {
       throw new ForbiddenException('Laporan ini sudah tidak dapat diedit.');
     }
 
-    const { data: status, error: statusError } = await client
+    const EDIT_WINDOW_MS = 15 * 60 * 1000;
+    const createdAt = new Date(existing.created_at).getTime();
+    if (!Number.isFinite(createdAt) || Date.now() > createdAt + EDIT_WINDOW_MS) {
+      throw new ForbiddenException(
+        'Laporan hanya dapat diedit dalam 15 menit setelah dibuat.',
+      );
+    }
+
+    const { data: _status, error: statusError } = await client
       .from('status')
       .select('status_name')
       .eq('id', existing.status_id)

@@ -26,7 +26,11 @@ export class CloudinaryService implements OnModuleInit {
     });
   }
 
-  uploadImage(buffer: Buffer, folder: string, publicId?: string,): Promise<UploadedImage> {
+  uploadImage(
+    buffer: Buffer,
+    folder: string,
+    publicId?: string,
+  ): Promise<UploadedImage> {
     return new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {

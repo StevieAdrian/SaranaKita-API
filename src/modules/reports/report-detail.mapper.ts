@@ -63,6 +63,7 @@ export type ReportDetail = {
   comments: number;
   recommendations: number;
   votedByMe: boolean;
+  recommendedByMe: boolean;
   verifiedBy: string | null;
   rejectedBy: string | null;
   updatedBy: string | null;
@@ -115,6 +116,7 @@ function buildTimeline(
 export function toReportDetail(
   row: ReportDetailRow,
   votedByMe: boolean,
+  recommendedByMe = false,
 ): ReportDetail {
   const reporter = first(row.reporter);
   const profile = first(reporter?.profile);
@@ -162,6 +164,7 @@ export function toReportDetail(
     comments: first(row.reports_comments)?.count ?? 0,
     recommendations: first(row.recommendations)?.count ?? 0,
     votedByMe,
+    recommendedByMe,
     verifiedBy: row.verified_by,
     rejectedBy: row.rejected_by,
     updatedBy: row.updated_by,

@@ -8,6 +8,9 @@ import { SignInDto } from './dto/sign-in.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { SwitchRoleDto } from './dto/switch-role.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { CompleteGoogleProfileDto } from './dto/complete-google-profile.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -36,6 +39,30 @@ export class AuthController {
   }
 
   @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
+  }
+
+  @Public()
+  @Post('resend-otp')
+  @HttpCode(HttpStatus.OK)
+  resendOtp(
+    @Body('email') email: string,
+    @Body('type') type?: 'signup' | 'recovery',
+  ) {
+    return this.authService.resendOtp(email, type);
+  }
+
+  @Public()
   @Post('sign-in')
   @HttpCode(HttpStatus.OK)
   signIn(@Body() dto: SignInDto) {
@@ -52,6 +79,15 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
     return this.authService.me(user);
+  }
+
+  @Post('complete-google-profile')
+  @HttpCode(HttpStatus.OK)
+  completeGoogleProfile(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CompleteGoogleProfileDto,
+  ) {
+    return this.authService.completeGoogleProfile(user, dto);
   }
 
   @Post('dev/switch-role')
