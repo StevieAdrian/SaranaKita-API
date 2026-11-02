@@ -27,6 +27,9 @@ const FEED_SELECT = [
   'category_id',
   'image_url',
   'created_at',
+  'verified_by',
+  'rejected_by',
+  'updated_by',
   'status(status_name)',
   'reporter:user!report_reporter_id_fkey(username, profile(full_name, class))',
   'reports_votes(count)',
@@ -44,7 +47,7 @@ export class ReportFeedService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly schoolMembership: SchoolMembershipService,
-  ) {}
+  ) { }
 
   async list(
     user: AuthUser,
@@ -322,10 +325,10 @@ export class ReportFeedService {
         .in('report_id', reportIds),
       role === 'guru'
         ? client
-            .from('recommendations')
-            .select('report_id')
-            .eq('guru_id', userId)
-            .in('report_id', reportIds)
+          .from('recommendations')
+          .select('report_id')
+          .eq('guru_id', userId)
+          .in('report_id', reportIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -390,7 +393,7 @@ export class ReportFeedService {
         `Status "${INITIAL_RECOMMENDATION_STATUS}" belum tersedia.`,
       );
     }
-    return (data as { id: string }).id;
+    return data.id;
   }
 
   private async voteResult(

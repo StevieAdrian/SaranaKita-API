@@ -15,11 +15,12 @@ export class RegisterDto {
 
   @IsString()
   @IsNotEmpty()
+  @MinLength(1)
   firstName: string;
 
   @IsString()
-  @IsNotEmpty()
-  lastName: string;
+  @IsOptional()
+  lastName?: string;
 
   @IsString()
   @IsNotEmpty()

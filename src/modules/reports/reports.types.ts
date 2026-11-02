@@ -12,6 +12,9 @@ export type ReportRow = {
   image_public_id: string | null;
   is_validate: boolean;
   created_at: string;
+  verified_by: string | null;
+  rejected_by: string | null;
+  updated_by: string | null;
 };
 
 export type ReportResponse = {
@@ -25,4 +28,7 @@ export type ReportResponse = {
   imageUrl: string | null;
   isValidated: boolean;
   createdAt: string;
+  verifiedBy: string | null;
+  rejectedBy: string | null;
+  updatedBy: string | null;
 };

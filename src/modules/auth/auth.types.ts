@@ -8,6 +8,7 @@ export interface AuthTokensResponse {
 export interface AuthUserResponse {
   id: string;
   email: string;
+  username?: string;
   displayName: string;
   role: UserRole | null;
 }

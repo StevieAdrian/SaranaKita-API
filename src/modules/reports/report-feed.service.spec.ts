@@ -10,10 +10,10 @@ import {
 import { ReportFeedService } from './report-feed.service';
 
 jest.mock('../../supabase/supabase.service', () => ({
-  SupabaseService: class {},
+  SupabaseService: class { },
 }));
 jest.mock('../schools/school-membership.service', () => ({
-  SchoolMembershipService: class {},
+  SchoolMembershipService: class { },
 }));
 
 type Result = { data?: unknown; error?: unknown; count?: number | null };
@@ -58,6 +58,10 @@ const row: FeedReportRow = {
   reports_votes: [{ count: 3 }],
   reports_comments: [{ count: 1 }],
   recommendations: [{ count: 0 }],
+  verified_by: null,
+  rejected_by: null,
+  updated_by: null,
+  reports_notes: [],
 };
 
 function setup(tables: Record<string, Result[]>) {
@@ -110,6 +114,10 @@ describe('report feed mapper', () => {
       recommendations: 0,
       votedByMe: true,
       recommendedByMe: false,
+      verifiedBy: null,
+      rejectedBy: null,
+      updatedBy: null,
+      note: null,
     });
   });
 

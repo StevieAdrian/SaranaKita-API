@@ -27,7 +27,7 @@ export class ReportsService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly configService: ConfigService,
     private readonly schoolMembership: SchoolMembershipService,
-  ) {}
+  ) { }
 
   async create(user: AuthUser, dto: CreateReportDto): Promise<ReportResponse> {
     if (dto.imageUrl) {
@@ -54,7 +54,7 @@ export class ReportsService {
         image_public_id: dto.imagePublicId ?? null,
       })
       .select(
-        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url,image_public_id, is_validate, created_at',
+        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url,image_public_id, is_validate, created_at, verified_by, rejected_by, updated_by',
       )
       .single();
 
@@ -84,7 +84,7 @@ export class ReportsService {
     const { data: existing, error: findError } = await client
       .from(this.table)
       .select(
-        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url, image_public_id, is_validate, created_at',
+        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url, image_public_id, is_validate, created_at, verified_by, rejected_by, updated_by',
       )
       .eq('id', reportId)
       .eq('school_id', schoolId)
@@ -108,7 +108,15 @@ export class ReportsService {
       throw new ForbiddenException('Laporan ini sudah tidak dapat diedit.');
     }
 
-    const { data: status, error: statusError } = await client
+    const EDIT_WINDOW_MS = 15 * 60 * 1000;
+    const createdAt = new Date(existing.created_at).getTime();
+    if (!Number.isFinite(createdAt) || Date.now() > createdAt + EDIT_WINDOW_MS) {
+      throw new ForbiddenException(
+        'Laporan hanya dapat diedit dalam 15 menit setelah dibuat.',
+      );
+    }
+
+    const { data: _status, error: statusError } = await client
       .from('status')
       .select('status_name')
       .eq('id', existing.status_id)
@@ -156,6 +164,9 @@ export class ReportsService {
       throw new BadRequestException('Tidak ada perubahan untuk disimpan.');
     }
 
+    patch.updated_by = user.id;
+    patch.updated_at = new Date().toISOString();
+
     const { data: updated, error: updateError } = await client
       .from(this.table)
       .update(patch)
@@ -163,7 +174,7 @@ export class ReportsService {
       .eq('reporter_id', user.id)
       .eq('school_id', schoolId)
       .select(
-        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url, is_validate, created_at',
+        'id, reporter_id, school_id, title, description, location, broken_date, category_id, status_id, image_url, is_validate, created_at, verified_by, rejected_by, updated_by',
       )
       .maybeSingle();
 
@@ -224,6 +235,9 @@ export class ReportsService {
       imageUrl: row.image_url,
       isValidated: row.is_validate,
       createdAt: row.created_at,
+      verifiedBy: row.verified_by,
+      rejectedBy: row.rejected_by,
+      updatedBy: row.updated_by,
     };
   }
 }

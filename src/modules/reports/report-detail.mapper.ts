@@ -12,6 +12,9 @@ export type ReportDetailRow = {
   image_url: string | null;
   created_at: string;
   updated_at: string | null;
+  verified_by: string | null;
+  rejected_by: string | null;
+  updated_by: string | null;
   status: Related<{ status_name: string | null }>;
   category: Related<{ id: string; category_name: string | null }>;
   reporter: Related<{
@@ -60,6 +63,10 @@ export type ReportDetail = {
   comments: number;
   recommendations: number;
   votedByMe: boolean;
+  recommendedByMe: boolean;
+  verifiedBy: string | null;
+  rejectedBy: string | null;
+  updatedBy: string | null;
   timeline: ReportTimelineEvent[];
   note: {
     id: string;
@@ -78,6 +85,9 @@ export const REPORT_DETAIL_SELECT = [
   'image_url',
   'created_at',
   'updated_at',
+  'verified_by',
+  'rejected_by',
+  'updated_by',
   'status(status_name)',
   'category(id, category_name)',
   'reporter:user!report_reporter_id_fkey(username, roles(role_name), profile(full_name, class, profile_pict))',
@@ -106,6 +116,7 @@ function buildTimeline(
 export function toReportDetail(
   row: ReportDetailRow,
   votedByMe: boolean,
+  recommendedByMe = false,
 ): ReportDetail {
   const reporter = first(row.reporter);
   const profile = first(reporter?.profile);
@@ -153,6 +164,10 @@ export function toReportDetail(
     comments: first(row.reports_comments)?.count ?? 0,
     recommendations: first(row.recommendations)?.count ?? 0,
     votedByMe,
+    recommendedByMe,
+    verifiedBy: row.verified_by,
+    rejectedBy: row.rejected_by,
+    updatedBy: row.updated_by,
     timeline: buildTimeline(status, row.created_at, row.updated_at),
     note,
   };

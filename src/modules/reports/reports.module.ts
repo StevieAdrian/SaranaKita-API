@@ -5,6 +5,7 @@ import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
 import { ReportCommentsService } from './report-comments.service';
 import { ReportDashboardService } from './report-dashboard.service';
+import { ReportMonitoringService } from './report-monitoring.service';
 import { ReportNotesService } from './report-notes.service';
 import { ReportEvaluasiService } from './report-evaluasi.service';
 import { ReportMonitoringService } from './report-monitoring.service';
@@ -17,6 +18,7 @@ import { ReportMonitoringService } from './report-monitoring.service';
     ReportDetailService,
     ReportCommentsService,
     ReportDashboardService,
+    ReportMonitoringService,
     ReportNotesService,
     ReportEvaluasiService,
     ReportMonitoringService,

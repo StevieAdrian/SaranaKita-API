@@ -29,6 +29,8 @@ export type FullUserProfile = {
   id: string;
   email: string;
   fullName: string;
+  firstName?: string;
+  lastName?: string;
   role: UserRole | null;
   phone: string;
   birthDate: string;
@@ -47,6 +49,8 @@ export type FullUserProfile = {
     reportsCreated: number;
     votesCount: number;
     recommendationsCount: number;
+    reportsRejected?: number;
+    reportsVerified?: number;
     'Menunggu Verifikasi': number;
     'Dalam Pemeriksaan': number;
     'Dalam Perbaikan': number;
@@ -67,14 +71,15 @@ export class ProfileService {
   async getProfile(userId: string): Promise<FullUserProfile> {
     const client = this.supabaseService.getAdminClient();
 
-    const { data: userRow, error: userError } = await client
+    const { data: userRows, error: userError } = await client
       .from('user')
       .select(
         'id, email, username, roles(role_name), profile(full_name, nickname, class, dob, profile_pict)',
       )
       .eq('id', userId)
-      .maybeSingle();
+      .limit(1);
 
+    const userRow = userRows?.[0];
     if (userError || !userRow) {
       throw new NotFoundException('Data pengguna tidak ditemukan.');
     }
@@ -98,39 +103,44 @@ export class ProfileService {
       const [siswa, guru, staff] = await Promise.all([
         client
           .from('siswa')
-          .select('school_id, school(id, school_name, school_code, school_address)')
+          .select('school_id, school(*)')
           .eq('user_id', userId)
-          .maybeSingle(),
+          .limit(1),
         client
           .from('guru')
-          .select('school_id, school(id, school_name, school_code, school_address)')
+          .select('school_id, school(*)')
           .eq('user_id', userId)
-          .maybeSingle(),
+          .limit(1),
         client
           .from('staff')
-          .select('school_id, school(id, school_name, school_code, school_address)')
+          .select('school_id, school(*)')
           .eq('user_id', userId)
-          .maybeSingle(),
+          .limit(1),
       ]);
 
-      const membership = siswa.data ?? guru.data ?? staff.data;
+      const membership = siswa.data?.[0] ?? guru.data?.[0] ?? staff.data?.[0];
       schoolId = membership?.school_id ?? null;
       const schoolData = membership?.school;
-      const school = first(schoolData as Related<{
-        id: string;
-        school_name: string | null;
-        school_code: string | null;
-        school_address: string | null;
-      }>);
+      const school = first(
+        schoolData as Related<{
+          id: string;
+          school_name: string | null;
+          school_address: string | null;
+          npsn?: string | null;
+          principal?: string | null;
+          phone?: string | null;
+          accreditation?: string | null;
+        }>,
+      );
 
       if (school) {
         schoolInfo = {
           name: school.school_name ?? 'Belum Terhubung Sekolah',
           address: school.school_address ?? '-',
-          npsn: school.school_code ?? '-',
-          principal: '-',
-          phone: '-',
-          accreditation: '-',
+          npsn: school.npsn ?? '-',
+          principal: school.principal ?? '-',
+          phone: school.phone ?? '-',
+          accreditation: school.accreditation ?? '-',
         };
       }
     } catch { }
@@ -141,12 +151,16 @@ export class ProfileService {
       .catch(() => null);
 
     const phone =
-      (authUser?.user_metadata?.phone as string) ||
-      authUser?.phone ||
-      '';
+      (authUser?.user_metadata?.phone as string) || authUser?.phone || '';
     const gender = (authUser?.user_metadata?.gender as string) || '';
+    const firstName =
+      (authUser?.user_metadata?.first_name as string) || undefined;
+    const lastName =
+      (authUser?.user_metadata?.last_name as string) || undefined;
 
-    const isStaffOrAdmin = role === 'staff' || role === 'administrator';
+    const isStaff = role === 'staff';
+    const isAdmin = role === 'administrator';
+    const isStaffOrAdmin = isStaff || isAdmin;
 
     let statusReportsQuery = client
       .from('report')
@@ -157,22 +171,40 @@ export class ProfileService {
       statusReportsQuery = statusReportsQuery.eq('reporter_id', userId);
     }
 
-    const [reportsCountRes, votesRes, recommsRes, userReportsRes] =
-      await Promise.all([
-        client
-          .from('report')
-          .select('id', { count: 'exact', head: true })
-          .eq('reporter_id', userId),
-        client
-          .from('reports_votes')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', userId),
-        client
-          .from('recommendations')
-          .select('id', { count: 'exact', head: true })
-          .eq('guru_id', userId),
-        statusReportsQuery,
-      ]);
+    if (isStaffOrAdmin) {
+      await this.reconcileReviewers(client, schoolId);
+    }
+
+    const [
+      reportsCountRes,
+      votesRes,
+      recommsRes,
+      statusReportsRes,
+      staffRejectedRes,
+      staffVerifiedRes,
+    ] = await Promise.all([
+      client
+        .from('report')
+        .select('id', { count: 'exact', head: true })
+        .eq('reporter_id', userId),
+      client
+        .from('reports_votes')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId),
+      client
+        .from('recommendations')
+        .select('id', { count: 'exact', head: true })
+        .eq('guru_id', userId),
+      statusReportsQuery,
+      client
+        .from('report')
+        .select('id', { count: 'exact', head: true })
+        .eq('rejected_by', userId),
+      client
+        .from('report')
+        .select('id', { count: 'exact', head: true })
+        .eq('verified_by', userId),
+    ]);
 
     const statusCounts = {
       'Menunggu Verifikasi': 0,
@@ -182,7 +214,7 @@ export class ProfileService {
       'Ditolak': 0,
     };
 
-    for (const r of (userReportsRes.data ?? []) as Array<{
+    for (const r of (statusReportsRes.data ?? []) as Array<{
       status: Related<{ status_name: string | null }>;
     }>) {
       const s = (first(r.status)?.status_name ?? '').toLowerCase();
@@ -193,6 +225,13 @@ export class ProfileService {
       else if (s.includes('tolak')) statusCounts['Ditolak']++;
     }
 
+    const finalRejected = isStaff
+      ? (staffRejectedRes.count ?? 0)
+      : statusCounts['Ditolak'];
+    const finalVerified = isStaff
+      ? (staffVerifiedRes.count ?? 0)
+      : statusCounts['Selesai'];
+
     return {
       id: row.id,
       email: row.email,
@@ -201,6 +240,8 @@ export class ProfileService {
         (authUser?.user_metadata?.full_name as string) ??
         row.username ??
         row.email.split('@')[0],
+      firstName,
+      lastName,
       role,
       phone,
       birthDate: profile?.dob ?? '',
@@ -217,7 +258,13 @@ export class ProfileService {
         reportsCreated: reportsCountRes.count ?? 0,
         votesCount: votesRes.count ?? 0,
         recommendationsCount: recommsRes.count ?? 0,
-        ...statusCounts,
+        reportsRejected: staffRejectedRes.count ?? 0,
+        reportsVerified: staffVerifiedRes.count ?? 0,
+        'Menunggu Verifikasi': statusCounts['Menunggu Verifikasi'],
+        'Dalam Pemeriksaan': statusCounts['Dalam Pemeriksaan'],
+        'Dalam Perbaikan': statusCounts['Dalam Perbaikan'],
+        'Selesai': finalVerified,
+        'Ditolak': finalRejected,
       },
     };
   }
@@ -247,7 +294,10 @@ export class ProfileService {
 
     const { error: profileError } = await client
       .from('profile')
-      .upsert({ user_id: userId, ...profileUpdates }, { onConflict: 'user_id' });
+      .upsert(
+        { user_id: userId, ...profileUpdates },
+        { onConflict: 'user_id' },
+      );
 
     if (profileError) {
       throw new BadRequestException(
@@ -257,8 +307,19 @@ export class ProfileService {
 
     const metadataUpdates: Record<string, unknown> = {};
     if (dto.fullName !== undefined) metadataUpdates.full_name = dto.fullName;
+    if (dto.firstName !== undefined) metadataUpdates.first_name = dto.firstName;
+    if (dto.lastName !== undefined) metadataUpdates.last_name = dto.lastName;
     if (dto.phone !== undefined) metadataUpdates.phone = dto.phone;
-    if (dto.gender !== undefined) metadataUpdates.gender = dto.gender;
+    if (dto.gender !== undefined) {
+      let genderLabel = dto.gender;
+      const lowerGender = (dto.gender || '').trim().toLowerCase();
+      if (lowerGender === 'female' || lowerGender === 'perempuan') {
+        genderLabel = 'Perempuan';
+      } else if (lowerGender === 'male' || lowerGender === 'laki-laki') {
+        genderLabel = 'Laki-Laki';
+      }
+      metadataUpdates.gender = genderLabel;
+    }
     if (dto.classOrPosition !== undefined) {
       metadataUpdates.classOrPosition = dto.classOrPosition;
       metadataUpdates.jabatan = dto.classOrPosition;
@@ -292,16 +353,25 @@ export class ProfileService {
     userId: string,
     email: string | undefined,
     dto: ChangePasswordDto,
-  ): Promise<{ message: string }> {
-    let targetEmail = email;
+  ): Promise<{
+    message: string;
+    tokens?: { accessToken: string; refreshToken: string };
+  }> {
+    const admin = this.supabaseService.getAdminClient();
+    let targetEmail = email?.trim().toLowerCase();
     if (!targetEmail) {
-      const userRes = await this.supabaseService
-        .getAdminClient()
+      const authUserRes = await admin.auth.admin
+        .getUserById(userId)
+        .catch(() => null);
+      targetEmail = authUserRes?.data?.user?.email?.trim().toLowerCase();
+    }
+    if (!targetEmail) {
+      const userRes = await admin
         .from('user')
         .select('email')
         .eq('id', userId)
-        .maybeSingle();
-      targetEmail = userRes.data?.email;
+        .limit(1);
+      targetEmail = userRes.data?.[0]?.email?.trim().toLowerCase();
     }
 
     if (!targetEmail) {
@@ -318,7 +388,6 @@ export class ProfileService {
       throw new UnauthorizedException('Kata sandi saat ini tidak valid.');
     }
 
-    const admin = this.supabaseService.getAdminClient();
     const { error: updateErr } = await admin.auth.admin.updateUserById(userId, {
       password: dto.newPassword,
     });
@@ -329,15 +398,98 @@ export class ProfileService {
       );
     }
 
-    const { error: userTableErr } = await admin
-      .from('user')
-      .update({ password: dto.newPassword })
-      .eq('id', userId);
-
-    if (userTableErr) {
-      this.logger.warn(`Failed to update password in user table: ${userTableErr.message}`);
+    let freshTokens: { accessToken: string; refreshToken: string } | undefined;
+    try {
+      const { data: newSessionData } = await anon.auth.signInWithPassword({
+        email: targetEmail,
+        password: dto.newPassword,
+      });
+      if (newSessionData?.session) {
+        freshTokens = {
+          accessToken: newSessionData.session.access_token,
+          refreshToken: newSessionData.session.refresh_token,
+        };
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Gagal membuat token sesi baru setelah perubahan kata sandi: ${err?.message || err}`,
+      );
     }
 
-    return { message: 'Kata sandi berhasil diperbarui.' };
+    return {
+      message: 'Kata sandi berhasil diperbarui.',
+      ...(freshTokens ? { tokens: freshTokens } : {}),
+    };
+  }
+
+  private async reconcileReviewers(
+    client: any,
+    schoolId: string | null,
+  ): Promise<void> {
+    try {
+      let rejectedQuery = client
+        .from('report')
+        .select('id, updated_by, status!inner(status_name)')
+        .is('rejected_by', null)
+        .not('updated_by', 'is', null)
+        .eq('status.status_name', 'Ditolak');
+
+      if (schoolId) {
+        rejectedQuery = rejectedQuery.eq('school_id', schoolId);
+      }
+
+      let verifiedQuery = client
+        .from('report')
+        .select('id, updated_by, status!inner(status_name)')
+        .is('verified_by', null)
+        .not('updated_by', 'is', null)
+        .neq('status.status_name', 'Menunggu Verifikasi')
+        .neq('status.status_name', 'Ditolak');
+
+      if (schoolId) {
+        verifiedQuery = verifiedQuery.eq('school_id', schoolId);
+      }
+
+      const [unlinkedRejectedRes, unlinkedVerifiedRes] = await Promise.all([
+        rejectedQuery,
+        verifiedQuery,
+      ]);
+
+      const updates: Promise<any>[] = [];
+
+      for (const r of (unlinkedRejectedRes.data ?? []) as Array<{
+        id: string;
+        updated_by: string;
+      }>) {
+        if (r.updated_by) {
+          updates.push(
+            client
+              .from('report')
+              .update({ rejected_by: r.updated_by })
+              .eq('id', r.id),
+          );
+        }
+      }
+
+      for (const r of (unlinkedVerifiedRes.data ?? []) as Array<{
+        id: string;
+        updated_by: string;
+      }>) {
+        if (r.updated_by) {
+          updates.push(
+            client
+              .from('report')
+              .update({ verified_by: r.updated_by })
+              .eq('id', r.id),
+          );
+        }
+      }
+
+      if (updates.length > 0) {
+        await Promise.all(updates);
+      }
+    } catch (err: any) {
+      this.logger.warn(`reconcileReviewers error: ${err?.message || err}`);
+    }
   }
 }

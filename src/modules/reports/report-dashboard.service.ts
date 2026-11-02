@@ -23,6 +23,9 @@ const DASHBOARD_REPORT_SELECT = [
   'category_id',
   'image_url',
   'created_at',
+  'verified_by',
+  'rejected_by',
+  'updated_by',
   'status(status_name)',
   'reporter:user!report_reporter_id_fkey(username, profile(full_name, class))',
   'reports_votes(count)',
@@ -73,7 +76,11 @@ export class ReportDashboardService {
       ]);
     const schoolResult = userSchool
       ? null
-      : await client.from('school').select('school_name').limit(1).maybeSingle();
+      : await client
+          .from('school')
+          .select('school_name')
+          .limit(1)
+          .maybeSingle();
 
     if (statusResult.error) throw statusResult.error;
     if (categoryResult.error) throw categoryResult.error;
@@ -94,9 +101,7 @@ export class ReportDashboardService {
     await Promise.all(
       REPORT_STATUSES.map(async (status) => {
         const ids = idsByStatus.get(status) ?? [];
-        const queries = ids.length
-          ? [countReports().in('status_id', ids)]
-          : [];
+        const queries = ids.length ? [countReports().in('status_id', ids)] : [];
         if (status === 'waiting_verification') {
           queries.push(countReports().is('status_id', null));
         }
@@ -146,7 +151,7 @@ export class ReportDashboardService {
       generatedAt: now.toISOString(),
       schoolName: userSchool
         ? userSchool.name
-        : (schoolResult?.data as SchoolRow | null)?.school_name ?? null,
+        : ((schoolResult?.data as SchoolRow | null)?.school_name ?? null),
       totalReports: totalResult.count ?? 0,
       totalThisMonth: monthResult.count ?? 0,
       statusCounts,
