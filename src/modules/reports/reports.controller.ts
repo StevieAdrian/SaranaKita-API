@@ -36,7 +36,6 @@ import { ReportNotesService } from './report-notes.service';
 import { CreateReportNoteDto } from './dto/create-report-note.dto';
 import { ReportEvaluasiService } from './report-evaluasi.service';
 import { CreateEvaluasiDto } from './dto/create-evaluasi.dto';
-import { ReportMonitoringService } from './report-monitoring.service';
 
 @Controller('reports')
 export class ReportsController {
@@ -46,7 +45,6 @@ export class ReportsController {
     private readonly reportDetailService: ReportDetailService,
     private readonly reportCommentsService: ReportCommentsService,
     private readonly reportDashboardService: ReportDashboardService,
-    private readonly reportMonitoringService: ReportMonitoringService,
     private readonly reportNotesService: ReportNotesService,
     private readonly reportEvaluasiService: ReportEvaluasiService,
     private readonly reportMonitoringService: ReportMonitoringService,
@@ -247,5 +245,4 @@ export class ReportsController {
   getMonitoring(@CurrentUser() user: AuthUser) {
     return this.reportMonitoringService.getMonitoring(user);
   }
-
 }

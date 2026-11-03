@@ -19,8 +19,9 @@ describe('CategoriesService', () => {
   it('maps rows to { id, name } ordered by name', async () => {
     const { service, from, select, order } = mockSupabase({
       data: [
-        { id: 'a', category_name: 'Elektronik' },
-        { id: 'b', category_name: 'Furnitur' },
+        { id: 'a', category_name: 'Fasilitas' },
+        { id: 'b', category_name: 'Kebersihan' },
+        { id: 'c', category_name: 'Keamanan' },
       ],
       error: null,
     });
@@ -31,8 +32,9 @@ describe('CategoriesService', () => {
     expect(select).toHaveBeenCalledWith('id, category_name');
     expect(order).toHaveBeenCalledWith('category_name', { ascending: true });
     expect(result).toEqual([
-      { id: 'a', name: 'Elektronik' },
-      { id: 'b', name: 'Furnitur' },
+      { id: 'a', name: 'Fasilitas' },
+      { id: 'b', name: 'Kebersihan' },
+      { id: 'c', name: 'Keamanan' },
     ]);
   });
 
