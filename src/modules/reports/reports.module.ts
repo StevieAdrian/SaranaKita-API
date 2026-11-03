@@ -20,6 +20,7 @@ import { ReportEvaluasiService } from './report-evaluasi.service';
     ReportMonitoringService,
     ReportNotesService,
     ReportEvaluasiService,
+    ReportMonitoringService,
   ],
 })
 export class ReportsModule {}

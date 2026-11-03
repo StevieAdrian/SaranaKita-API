@@ -45,9 +45,9 @@ export class ReportsController {
     private readonly reportDetailService: ReportDetailService,
     private readonly reportCommentsService: ReportCommentsService,
     private readonly reportDashboardService: ReportDashboardService,
-    private readonly reportMonitoringService: ReportMonitoringService,
     private readonly reportNotesService: ReportNotesService,
     private readonly reportEvaluasiService: ReportEvaluasiService,
+    private readonly reportMonitoringService: ReportMonitoringService,
   ) {}
 
   //Report
@@ -236,5 +236,13 @@ export class ReportsController {
   @Roles('siswa', 'guru', 'staff', 'administrator')
   listEvaluasi(@Param('id', ParseUUIDPipe) id: string) {
     return this.reportEvaluasiService.list(id);
+  }
+
+  //Report Monitor
+  @Get('monitoring')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  getMonitoring(@CurrentUser() user: AuthUser) {
+    return this.reportMonitoringService.getMonitoring(user);
   }
 }
