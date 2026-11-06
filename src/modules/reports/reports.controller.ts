@@ -131,6 +131,23 @@ export class ReportsController {
     return this.reportDetailService.findOne(user, id);
   }
 
+  @Get(':id/votes')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'administrator', 'staff')
+  listVotes(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.reportDetailService.listVotes(user, id);
+  }
+
+  @Get(':id/recommendations')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'administrator', 'staff')
+  listRecommendations(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reportDetailService.listRecommendations(user, id);
+  }
+
   //Report Comment
   @Get(':id/comments')
   @UseGuards(RolesGuard)
