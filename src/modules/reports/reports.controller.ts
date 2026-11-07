@@ -30,6 +30,7 @@ import { ReportFeedService } from './report-feed.service';
 import { ReportCommentsService } from './report-comments.service';
 import { ReportsService } from './reports.service';
 import { ReportDashboardService } from './report-dashboard.service';
+import { ReportMonitoringService } from './report-monitoring.service';
 import { UpdateReportDto } from './dto/update-report.dto';
 import { ReportNotesService } from './report-notes.service';
 import { CreateReportNoteDto } from './dto/create-report-note.dto';
@@ -46,6 +47,7 @@ export class ReportsController {
     private readonly reportDashboardService: ReportDashboardService,
     private readonly reportNotesService: ReportNotesService,
     private readonly reportEvaluasiService: ReportEvaluasiService,
+    private readonly reportMonitoringService: ReportMonitoringService,
   ) {}
 
   //Report
@@ -76,6 +78,13 @@ export class ReportsController {
   @Roles('administrator', 'staff')
   dashboard(@CurrentUser() user: AuthUser) {
     return this.reportDashboardService.getDashboard(user);
+  }
+
+  @Get('monitoring')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  monitoring(@CurrentUser() user: AuthUser) {
+    return this.reportMonitoringService.getMonitoring(user);
   }
 
   @Put(':id')
@@ -227,5 +236,13 @@ export class ReportsController {
   @Roles('siswa', 'guru', 'staff', 'administrator')
   listEvaluasi(@Param('id', ParseUUIDPipe) id: string) {
     return this.reportEvaluasiService.list(id);
+  }
+
+  //Report Monitor
+  @Get('monitoring')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  getMonitoring(@CurrentUser() user: AuthUser) {
+    return this.reportMonitoringService.getMonitoring(user);
   }
 }
