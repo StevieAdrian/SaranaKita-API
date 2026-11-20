@@ -1,8 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { PaginatedResult } from '../../common/dto/pagination.dto';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { SchoolMembershipService } from '../schools/school-membership.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import type {
   ListReportsQueryDto,
   PopularReportsQueryDto,
@@ -47,7 +52,8 @@ export class ReportFeedService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly schoolMembership: SchoolMembershipService,
-  ) { }
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async list(
     user: AuthUser,
@@ -65,7 +71,8 @@ export class ReportFeedService {
     let builder = this.supabaseService
       .getAdminClient()
       .from('report')
-      .select(FEED_SELECT, { count: 'exact' });
+      .select(FEED_SELECT, { count: 'exact' })
+      .eq('is_delete', false);
 
     if (schoolId) {
       builder = builder.eq('school_id', schoolId);
@@ -173,6 +180,7 @@ export class ReportFeedService {
       .getAdminClient()
       .from('report')
       .select(FEED_SELECT)
+      .eq('is_delete', false)
       .eq('school_id', schoolId);
 
     if (query.categoryId) {
@@ -202,7 +210,7 @@ export class ReportFeedService {
   }
 
   async vote(user: AuthUser, reportId: string): Promise<VoteResult> {
-    await this.assertReportInUserSchool(user.id, reportId);
+    await this.assertReportAcceptingSupport(user.id, reportId);
     const client = this.supabaseService.getAdminClient();
 
     const { data: existing, error: findError } = await client
@@ -230,7 +238,7 @@ export class ReportFeedService {
   }
 
   async unvote(user: AuthUser, reportId: string): Promise<VoteResult> {
-    await this.assertReportInUserSchool(user.id, reportId);
+    await this.assertReportAcceptingSupport(user.id, reportId);
 
     const { error } = await this.supabaseService
       .getAdminClient()
@@ -251,7 +259,7 @@ export class ReportFeedService {
     reportId: string,
     reason: string,
   ): Promise<RecommendationResult> {
-    await this.assertReportInUserSchool(user.id, reportId);
+    await this.assertReportAcceptingSupport(user.id, reportId);
     const client = this.supabaseService.getAdminClient();
     const { data: existing, error: findError } = await client
       .from('recommendations')
@@ -284,6 +292,20 @@ export class ReportFeedService {
       if (error) {
         throw error;
       }
+      const { data: report, error: reportError } = await client
+        .from('report')
+        .select('reporter_id, title')
+        .eq('id', reportId)
+        .maybeSingle();
+      if (reportError) throw reportError;
+      if (report) {
+        await this.notificationsService.notifyReportRecommended({
+          reportId,
+          reporterId: report.reporter_id as string,
+          actorId: user.id,
+          reportTitle: report.title as string,
+        });
+      }
     }
     return this.recommendationResult(user.id, reportId);
   }
@@ -292,7 +314,7 @@ export class ReportFeedService {
     user: AuthUser,
     reportId: string,
   ): Promise<RecommendationResult> {
-    await this.assertReportInUserSchool(user.id, reportId);
+    await this.assertReportAcceptingSupport(user.id, reportId);
     const { error } = await this.supabaseService
       .getAdminClient()
       .from('recommendations')
@@ -325,10 +347,10 @@ export class ReportFeedService {
         .in('report_id', reportIds),
       role === 'guru'
         ? client
-          .from('recommendations')
-          .select('report_id')
-          .eq('guru_id', userId)
-          .in('report_id', reportIds)
+            .from('recommendations')
+            .select('report_id')
+            .eq('guru_id', userId)
+            .in('report_id', reportIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -366,6 +388,7 @@ export class ReportFeedService {
       .select('id')
       .eq('id', reportId)
       .eq('school_id', schoolId)
+      .eq('is_delete', false)
       .maybeSingle();
 
     if (error) {
@@ -373,6 +396,34 @@ export class ReportFeedService {
     }
     if (!data) {
       throw new NotFoundException('Laporan tidak ditemukan.');
+    }
+  }
+
+  private async assertReportAcceptingSupport(
+    userId: string,
+    reportId: string,
+  ): Promise<void> {
+    const schoolId = await this.schoolMembership.getSchoolId(userId);
+    const { data, error } = await this.supabaseService
+      .getAdminClient()
+      .from('report')
+      .select('id, is_validate, status(status_name)')
+      .eq('id', reportId)
+      .eq('school_id', schoolId)
+      .eq('is_delete', false)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw new NotFoundException('Laporan tidak ditemukan.');
+
+    const status = Array.isArray(data.status) ? data.status[0] : data.status;
+    const isWaitingForVerification =
+      !data.is_validate &&
+      (!status?.status_name || status.status_name === 'Menunggu Verifikasi');
+    if (!isWaitingForVerification) {
+      throw new BadRequestException(
+        'Dukungan dan rekomendasi hanya tersedia sebelum laporan diverifikasi.',
+      );
     }
   }
 

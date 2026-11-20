@@ -14,6 +14,7 @@ import { CreateReportDto } from './dto/create-report.dto';
 import type { ReportResponse, ReportRow } from './reports.types';
 import { SchoolMembershipService } from '../schools/school-membership.service';
 import { UpdateReportDto } from './dto/update-report.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const FOREIGN_KEY_VIOLATION = '23503';
 
@@ -27,7 +28,8 @@ export class ReportsService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly configService: ConfigService,
     private readonly schoolMembership: SchoolMembershipService,
-  ) { }
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async create(user: AuthUser, dto: CreateReportDto): Promise<ReportResponse> {
     if (dto.imageUrl) {
@@ -69,7 +71,14 @@ export class ReportsService {
       throw error ?? new Error('Failed to create report');
     }
 
-    return this.toResponse(data);
+    const report = this.toResponse(data);
+    await this.notificationsService.notifyReportCreated({
+      reportId: data.id,
+      schoolId,
+      actorId: user.id,
+      reportTitle: data.title,
+    });
+    return report;
   }
 
   async update(
@@ -110,7 +119,10 @@ export class ReportsService {
 
     const EDIT_WINDOW_MS = 15 * 60 * 1000;
     const createdAt = new Date(existing.created_at).getTime();
-    if (!Number.isFinite(createdAt) || Date.now() > createdAt + EDIT_WINDOW_MS) {
+    if (
+      !Number.isFinite(createdAt) ||
+      Date.now() > createdAt + EDIT_WINDOW_MS
+    ) {
       throw new ForbiddenException(
         'Laporan hanya dapat diedit dalam 15 menit setelah dibuat.',
       );
@@ -187,6 +199,62 @@ export class ReportsService {
     }
 
     return this.toResponse(updated as ReportRow);
+  }
+
+  async remove(user: AuthUser, reportId: string): Promise<{ message: string }> {
+    const client = this.supabaseService.getAdminClient();
+    const schoolId = await this.schoolMembership.getSchoolId(user.id);
+
+    const { data: existing, error: findError } = await client
+      .from(this.table)
+      .select('id, reporter_id, is_validate, is_delete, created_at')
+      .eq('id', reportId)
+      .eq('school_id', schoolId)
+      .eq('is_delete', false)
+      .maybeSingle();
+
+    if (findError) {
+      throw findError;
+    }
+    if (!existing || existing.is_delete) {
+      throw new NotFoundException('Laporan tidak ditemukan.');
+    }
+    if (existing.reporter_id !== user.id) {
+      throw new ForbiddenException(
+        'Kamu hanya dapat menghapus laporan milikmu sendiri.',
+      );
+    }
+    if (existing.is_validate) {
+      throw new ForbiddenException('Laporan ini sudah tidak dapat dihapus.');
+    }
+
+    const EDIT_WINDOW_MS = 15 * 60 * 1000;
+    const createdAt = new Date(existing.created_at).getTime();
+    if (
+      !Number.isFinite(createdAt) ||
+      Date.now() > createdAt + EDIT_WINDOW_MS
+    ) {
+      throw new ForbiddenException(
+        'Laporan hanya dapat dihapus dalam 15 menit setelah dibuat.',
+      );
+    }
+
+    const { error: deleteError } = await client
+      .from(this.table)
+      .update({
+        is_delete: true,
+        updated_by: user.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', reportId)
+      .eq('reporter_id', user.id)
+      .eq('school_id', schoolId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    return { message: 'Laporan berhasil dihapus.' };
   }
 
   private async assertCategoryExists(categoryId: string): Promise<void> {

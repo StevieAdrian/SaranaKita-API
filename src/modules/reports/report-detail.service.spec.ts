@@ -3,12 +3,13 @@ import type { SupabaseService } from '../../supabase/supabase.service';
 import type { SchoolMembershipService } from '../schools/school-membership.service';
 import { toReportDetail, type ReportDetailRow } from './report-detail.mapper';
 import { ReportDetailService } from './report-detail.service';
+import type { NotificationsService } from '../notifications/notifications.service';
 
 jest.mock('../../supabase/supabase.service', () => ({
-  SupabaseService: class { },
+  SupabaseService: class {},
 }));
 jest.mock('../schools/school-membership.service', () => ({
-  SchoolMembershipService: class { },
+  SchoolMembershipService: class {},
 }));
 
 const row: ReportDetailRow = {
@@ -134,7 +135,13 @@ function setup(
   const membership = {
     getSchoolId: jest.fn().mockResolvedValue('school-1'),
   } as unknown as SchoolMembershipService;
-  return { service: new ReportDetailService(supabase, membership), chains };
+  const notifications = {
+    notifyReportStatusChanged: jest.fn().mockResolvedValue(undefined),
+  } as unknown as NotificationsService;
+  return {
+    service: new ReportDetailService(supabase, membership, notifications),
+    chains,
+  };
 }
 
 describe('ReportDetailService.findOne', () => {

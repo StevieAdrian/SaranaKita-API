@@ -16,6 +16,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { ProfileModule } from './modules/profile/profile.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ProfileModule } from './modules/profile/profile.module';
     ReportsModule,
     UploadsModule,
     ProfileModule,
+    NotificationsModule,
   ],
   providers: [
     {
