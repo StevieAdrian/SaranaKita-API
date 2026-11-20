@@ -8,8 +8,10 @@ import { ReportDashboardService } from './report-dashboard.service';
 import { ReportMonitoringService } from './report-monitoring.service';
 import { ReportNotesService } from './report-notes.service';
 import { ReportEvaluasiService } from './report-evaluasi.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [ReportsController],
   providers: [
     ReportsService,

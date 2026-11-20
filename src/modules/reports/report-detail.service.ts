@@ -7,6 +7,7 @@ import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { SchoolMembershipService } from '../schools/school-membership.service';
 import type { UpdateReportStatusDto } from './dto/update-report-status.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   REPORT_DETAIL_SELECT,
@@ -20,7 +21,8 @@ export class ReportDetailService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly schoolMembership: SchoolMembershipService,
-  ) { }
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async findOne(user: AuthUser, reportId: string): Promise<ReportDetail> {
     const client = this.supabaseService.getAdminClient();
@@ -42,10 +44,10 @@ export class ReportDetailService {
         .eq('user_id', user.id),
       user.role === 'guru'
         ? client
-          .from('recommendations')
-          .select('id', { count: 'exact', head: true })
-          .eq('report_id', reportId)
-          .eq('guru_id', user.id)
+            .from('recommendations')
+            .select('id', { count: 'exact', head: true })
+            .eq('report_id', reportId)
+            .eq('guru_id', user.id)
         : Promise.resolve({ count: 0, error: null }),
     ]);
 
@@ -63,7 +65,8 @@ export class ReportDetailService {
     }
 
     const row = report.data as unknown as ReportDetailRow;
-    const statusName = (Array.isArray(row.status) ? row.status[0] : row.status)?.status_name;
+    const statusName = (Array.isArray(row.status) ? row.status[0] : row.status)
+      ?.status_name;
 
     if (statusName === 'Ditolak' && !row.rejected_by && row.updated_by) {
       await client
@@ -99,7 +102,8 @@ export class ReportDetailService {
       const schoolId = await this.schoolMembership.getSchoolId(user.id);
       reportQuery.eq('school_id', schoolId);
     }
-    const { data: report, error: reportError } = await reportQuery.maybeSingle();
+    const { data: report, error: reportError } =
+      await reportQuery.maybeSingle();
     if (reportError) throw reportError;
     if (!report) throw new NotFoundException('Laporan tidak ditemukan.');
 
@@ -108,7 +112,10 @@ export class ReportDetailService {
       .select('user_id')
       .eq('report_id', reportId);
     if (error) throw error;
-    return this.listUsers((data ?? []).map((row) => row.user_id), client);
+    return this.listUsers(
+      (data ?? []).map((row) => row.user_id),
+      client,
+    );
   }
 
   async listRecommendations(user: AuthUser, reportId: string) {
@@ -118,7 +125,8 @@ export class ReportDetailService {
       const schoolId = await this.schoolMembership.getSchoolId(user.id);
       reportQuery.eq('school_id', schoolId);
     }
-    const { data: report, error: reportError } = await reportQuery.maybeSingle();
+    const { data: report, error: reportError } =
+      await reportQuery.maybeSingle();
     if (reportError) throw reportError;
     if (!report) throw new NotFoundException('Laporan tidak ditemukan.');
 
@@ -162,6 +170,15 @@ export class ReportDetailService {
     dto: UpdateReportStatusDto,
   ): Promise<ReportDetail> {
     const client = this.supabaseService.getAdminClient();
+    const { data: reportOwner, error: reportOwnerError } = await client
+      .from('report')
+      .select('reporter_id, title')
+      .eq('id', reportId)
+      .eq('is_delete', false)
+      .maybeSingle();
+    if (reportOwnerError) throw reportOwnerError;
+    if (!reportOwner) throw new NotFoundException('Laporan tidak ditemukan.');
+
     const { data: status, error: statusError } = await client
       .from('status')
       .select('id')
@@ -208,6 +225,18 @@ export class ReportDetailService {
       throw new NotFoundException('Laporan tidak ditemukan.');
     }
 
-    return toReportDetail(data as unknown as ReportDetailRow, false, false);
+    const updated = toReportDetail(
+      data as unknown as ReportDetailRow,
+      false,
+      false,
+    );
+    await this.notificationsService.notifyReportStatusChanged({
+      reportId,
+      reporterId: reportOwner.reporter_id as string,
+      actorId: user.id,
+      reportTitle: reportOwner.title as string,
+      statusName: dto.statusName,
+    });
+    return updated;
   }
 }

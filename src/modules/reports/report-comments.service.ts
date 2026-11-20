@@ -7,6 +7,7 @@ import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { toUserRole, type UserRole } from '../../common/utils/resolve-role';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { SchoolMembershipService } from '../schools/school-membership.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { CreateReportCommentDto } from './dto/create-report-comment.dto';
 
 type Related<T> = T | T[] | null | undefined;
@@ -46,7 +47,8 @@ export class ReportCommentsService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly schoolMembership: SchoolMembershipService,
-  ) { }
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async list(user: AuthUser, reportId: string): Promise<ReportComment[]> {
     if (user.role !== 'administrator') {
@@ -97,6 +99,21 @@ export class ReportCommentsService {
     }
 
     const [comment] = await this.withAuthors([data]);
+    const { data: report, error: reportError } = await this.supabaseService
+      .getAdminClient()
+      .from('report')
+      .select('reporter_id, title')
+      .eq('id', reportId)
+      .maybeSingle();
+    if (reportError) throw reportError;
+    if (report) {
+      await this.notificationsService.notifyReportCommented({
+        reportId,
+        reporterId: report.reporter_id as string,
+        actorId: user.id,
+        reportTitle: report.title as string,
+      });
+    }
     return comment;
   }
 

@@ -5,14 +5,15 @@ import type { SupabaseService } from '../../supabase/supabase.service';
 import type { CreateReportDto } from './dto/create-report.dto';
 import { ReportsService } from './reports.service';
 import { SchoolMembershipService } from '../schools/school-membership.service';
+import type { NotificationsService } from '../notifications/notifications.service';
 
 jest.mock('../../supabase/supabase.service', () => ({
-  SupabaseService: class { },
+  SupabaseService: class {},
 }));
 jest.mock('../../cloudinary/cloudinary.service', () => ({
-  CloudinaryService: class { },
+  CloudinaryService: class {},
 }));
-jest.mock('@nestjs/config', () => ({ ConfigService: class { } }));
+jest.mock('@nestjs/config', () => ({ ConfigService: class {} }));
 
 type Result = { data: unknown; error: unknown };
 
@@ -78,12 +79,16 @@ function setup(overrides: Partial<Record<string, Result>> = {}) {
   const deleteImage = jest.fn().mockResolvedValue(undefined);
   const cloudinary = { deleteImage } as unknown as CloudinaryService;
   const config = { getOrThrow: () => CLOUD } as unknown as ConfigService;
+  const notifications = {
+    notifyReportCreated: jest.fn().mockResolvedValue(undefined),
+  } as unknown as NotificationsService;
   return {
     service: new ReportsService(
       supabase,
       cloudinary,
       config,
       new SchoolMembershipService(supabase),
+      notifications,
     ),
     chains,
     deleteImage,
@@ -177,7 +182,9 @@ describe('ReportsService.update', () => {
 
     await expect(
       service.update(USER, 'report-1', { title: 'Judul Baru' }),
-    ).rejects.toThrow('Laporan hanya dapat diedit dalam 15 menit setelah dibuat.');
+    ).rejects.toThrow(
+      'Laporan hanya dapat diedit dalam 15 menit setelah dibuat.',
+    );
   });
 
   it('rejects updating when report has already been validated', async () => {

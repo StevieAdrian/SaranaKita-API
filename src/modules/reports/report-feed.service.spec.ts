@@ -8,12 +8,13 @@ import {
   type FeedReportRow,
 } from './report-feed.mapper';
 import { ReportFeedService } from './report-feed.service';
+import type { NotificationsService } from '../notifications/notifications.service';
 
 jest.mock('../../supabase/supabase.service', () => ({
-  SupabaseService: class { },
+  SupabaseService: class {},
 }));
 jest.mock('../schools/school-membership.service', () => ({
-  SchoolMembershipService: class { },
+  SchoolMembershipService: class {},
 }));
 
 type Result = { data?: unknown; error?: unknown; count?: number | null };
@@ -80,7 +81,13 @@ function setup(tables: Record<string, Result[]>) {
   const membership = {
     getSchoolId: jest.fn().mockResolvedValue('school-1'),
   } as unknown as SchoolMembershipService;
-  return { service: new ReportFeedService(supabase, membership), used };
+  const notifications = {
+    notifyReportRecommended: jest.fn().mockResolvedValue(undefined),
+  } as unknown as NotificationsService;
+  return {
+    service: new ReportFeedService(supabase, membership, notifications),
+    used,
+  };
 }
 
 describe('report feed mapper', () => {

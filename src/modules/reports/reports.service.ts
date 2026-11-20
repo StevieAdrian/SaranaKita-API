@@ -14,6 +14,7 @@ import { CreateReportDto } from './dto/create-report.dto';
 import type { ReportResponse, ReportRow } from './reports.types';
 import { SchoolMembershipService } from '../schools/school-membership.service';
 import { UpdateReportDto } from './dto/update-report.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const FOREIGN_KEY_VIOLATION = '23503';
 
@@ -27,7 +28,8 @@ export class ReportsService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly configService: ConfigService,
     private readonly schoolMembership: SchoolMembershipService,
-  ) { }
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async create(user: AuthUser, dto: CreateReportDto): Promise<ReportResponse> {
     if (dto.imageUrl) {
@@ -69,7 +71,14 @@ export class ReportsService {
       throw error ?? new Error('Failed to create report');
     }
 
-    return this.toResponse(data);
+    const report = this.toResponse(data);
+    await this.notificationsService.notifyReportCreated({
+      reportId: data.id,
+      schoolId,
+      actorId: user.id,
+      reportTitle: data.title,
+    });
+    return report;
   }
 
   async update(
@@ -110,7 +119,10 @@ export class ReportsService {
 
     const EDIT_WINDOW_MS = 15 * 60 * 1000;
     const createdAt = new Date(existing.created_at).getTime();
-    if (!Number.isFinite(createdAt) || Date.now() > createdAt + EDIT_WINDOW_MS) {
+    if (
+      !Number.isFinite(createdAt) ||
+      Date.now() > createdAt + EDIT_WINDOW_MS
+    ) {
       throw new ForbiddenException(
         'Laporan hanya dapat diedit dalam 15 menit setelah dibuat.',
       );
@@ -189,10 +201,7 @@ export class ReportsService {
     return this.toResponse(updated as ReportRow);
   }
 
-  async remove(
-    user: AuthUser,
-    reportId: string,
-  ): Promise<{ message: string }> {
+  async remove(user: AuthUser, reportId: string): Promise<{ message: string }> {
     const client = this.supabaseService.getAdminClient();
     const schoolId = await this.schoolMembership.getSchoolId(user.id);
 
@@ -221,7 +230,10 @@ export class ReportsService {
 
     const EDIT_WINDOW_MS = 15 * 60 * 1000;
     const createdAt = new Date(existing.created_at).getTime();
-    if (!Number.isFinite(createdAt) || Date.now() > createdAt + EDIT_WINDOW_MS) {
+    if (
+      !Number.isFinite(createdAt) ||
+      Date.now() > createdAt + EDIT_WINDOW_MS
+    ) {
       throw new ForbiddenException(
         'Laporan hanya dapat dihapus dalam 15 menit setelah dibuat.',
       );
