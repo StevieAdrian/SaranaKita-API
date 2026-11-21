@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { NotificationsGateway } from './notifications.gateway';
+import { FirebaseService } from '../../firebase/firebase.service';
 import type {
   AppNotification,
   NotificationData,
@@ -27,6 +28,7 @@ export class NotificationsService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly gateway: NotificationsGateway,
+    private readonly firebaseService: FirebaseService,
   ) {}
 
   async list(user: AuthUser, limit = 50): Promise<AppNotification[]> {
@@ -97,6 +99,32 @@ export class NotificationsService {
       .select('id');
     if (error) throw error;
     return { updated: data?.length ?? 0 };
+  }
+
+  async registerDeviceToken(userId: string, token: string): Promise<void> {
+    const { error } = await this.supabaseService
+      .getAdminClient()
+      .from('device_tokens')
+      .upsert(
+        {
+          user_id: userId,
+          token,
+          platform: 'android',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'token' },
+      );
+    if (error) throw error;
+  }
+
+  async removeDeviceToken(userId: string, token: string): Promise<void> {
+    const { error } = await this.supabaseService
+      .getAdminClient()
+      .from('device_tokens')
+      .delete()
+      .eq('user_id', userId)
+      .eq('token', token);
+    if (error) throw error;
   }
 
   async notifyReportCreated(input: {
@@ -261,6 +289,49 @@ export class NotificationsService {
         row.recipient_id as string,
         this.toNotification(row as NotificationRow),
       );
+    }
+    await this.sendPushNotifications(created ?? []);
+  }
+
+  private async sendPushNotifications(
+    notifications: ReadonlyArray<NotificationRow & { recipient_id: string }>,
+  ): Promise<void> {
+    if (notifications.length === 0) return;
+    const recipientIds = [
+      ...new Set(notifications.map((row) => row.recipient_id)),
+    ];
+    const { data, error } = await this.supabaseService
+      .getAdminClient()
+      .from('device_tokens')
+      .select('token')
+      .in('user_id', recipientIds);
+    if (error) {
+      this.logger.error(`Unable to load FCM tokens: ${error.message}`);
+      return;
+    }
+
+    const tokens = (data ?? []).map((row) => row.token as string);
+    const first = notifications[0];
+    if (!first || tokens.length === 0) return;
+    const invalidTokens = await this.firebaseService.sendToTokens(tokens, {
+      title: first.title,
+      body: first.body,
+      data: {
+        type: first.type,
+        reportId: first.data?.reportId ?? '',
+      },
+    });
+    if (invalidTokens.length > 0) {
+      const { error: deleteError } = await this.supabaseService
+        .getAdminClient()
+        .from('device_tokens')
+        .delete()
+        .in('token', invalidTokens);
+      if (deleteError) {
+        this.logger.error(
+          `Unable to remove invalid FCM tokens: ${deleteError.message}`,
+        );
+      }
     }
   }
 
