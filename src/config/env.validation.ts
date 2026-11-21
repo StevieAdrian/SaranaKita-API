@@ -1,5 +1,11 @@
 import { plainToInstance } from 'class-transformer';
-import { IsEnum, IsNumber, IsString, validateSync } from 'class-validator';
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  validateSync,
+} from 'class-validator';
 
 export enum Environment {
   Development = 'development',
@@ -34,6 +40,14 @@ class EnvironmentVariables {
 
   @IsString()
   CLOUDINARY_API_SECRET: string;
+
+  @IsOptional()
+  @IsString()
+  FIREBASE_SERVICE_ACCOUNT?: string;
+
+  @IsOptional()
+  @IsString()
+  FIREBASE_SERVICE_ACCOUNT_PATH?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
