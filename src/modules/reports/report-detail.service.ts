@@ -7,6 +7,8 @@ import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { SchoolMembershipService } from '../schools/school-membership.service';
 import type { UpdateReportStatusDto } from './dto/update-report-status.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   REPORT_DETAIL_SELECT,
   toReportDetail,
@@ -19,14 +21,16 @@ export class ReportDetailService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly schoolMembership: SchoolMembershipService,
-  ) { }
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async findOne(user: AuthUser, reportId: string): Promise<ReportDetail> {
     const client = this.supabaseService.getAdminClient();
     const reportQuery = client
       .from('report')
       .select(REPORT_DETAIL_SELECT)
-      .eq('id', reportId);
+      .eq('id', reportId)
+      .eq('is_delete', false);
     if (user.role !== 'administrator') {
       const schoolId = await this.schoolMembership.getSchoolId(user.id);
       reportQuery.eq('school_id', schoolId);
@@ -40,10 +44,10 @@ export class ReportDetailService {
         .eq('user_id', user.id),
       user.role === 'guru'
         ? client
-          .from('recommendations')
-          .select('id', { count: 'exact', head: true })
-          .eq('report_id', reportId)
-          .eq('guru_id', user.id)
+            .from('recommendations')
+            .select('id', { count: 'exact', head: true })
+            .eq('report_id', reportId)
+            .eq('guru_id', user.id)
         : Promise.resolve({ count: 0, error: null }),
     ]);
 
@@ -61,7 +65,8 @@ export class ReportDetailService {
     }
 
     const row = report.data as unknown as ReportDetailRow;
-    const statusName = (Array.isArray(row.status) ? row.status[0] : row.status)?.status_name;
+    const statusName = (Array.isArray(row.status) ? row.status[0] : row.status)
+      ?.status_name;
 
     if (statusName === 'Ditolak' && !row.rejected_by && row.updated_by) {
       await client
@@ -90,12 +95,90 @@ export class ReportDetailService {
     );
   }
 
+  async listVotes(user: AuthUser, reportId: string) {
+    const client = this.supabaseService.getAdminClient();
+    const reportQuery = client.from('report').select('id').eq('id', reportId);
+    if (user.role !== 'administrator') {
+      const schoolId = await this.schoolMembership.getSchoolId(user.id);
+      reportQuery.eq('school_id', schoolId);
+    }
+    const { data: report, error: reportError } =
+      await reportQuery.maybeSingle();
+    if (reportError) throw reportError;
+    if (!report) throw new NotFoundException('Laporan tidak ditemukan.');
+
+    const { data, error } = await client
+      .from('reports_votes')
+      .select('user_id')
+      .eq('report_id', reportId);
+    if (error) throw error;
+    return this.listUsers(
+      (data ?? []).map((row) => row.user_id),
+      client,
+    );
+  }
+
+  async listRecommendations(user: AuthUser, reportId: string) {
+    const client = this.supabaseService.getAdminClient();
+    const reportQuery = client.from('report').select('id').eq('id', reportId);
+    if (user.role !== 'administrator') {
+      const schoolId = await this.schoolMembership.getSchoolId(user.id);
+      reportQuery.eq('school_id', schoolId);
+    }
+    const { data: report, error: reportError } =
+      await reportQuery.maybeSingle();
+    if (reportError) throw reportError;
+    if (!report) throw new NotFoundException('Laporan tidak ditemukan.');
+
+    const { data, error } = await client
+      .from('recommendations')
+      .select('guru_id, reason')
+      .eq('report_id', reportId);
+    if (error) throw error;
+    const users = await this.listUsers(
+      (data ?? []).map((row) => row.guru_id),
+      client,
+    );
+    const byId = new Map(users.map((item) => [item.id, item]));
+    return (data ?? []).map((row) => ({
+      ...byId.get(row.guru_id),
+      reason: row.reason,
+    }));
+  }
+
+  private async listUsers(userIds: string[], client: SupabaseClient) {
+    const ids = [...new Set(userIds)];
+    if (ids.length === 0) return [];
+    const { data, error } = await client
+      .from('user')
+      .select('id, username, profile(full_name, profile_pict)')
+      .in('id', ids);
+    if (error) throw error;
+    return (data ?? []).map((row) => {
+      const profile = Array.isArray(row.profile) ? row.profile[0] : row.profile;
+      return {
+        id: row.id,
+        name: profile?.full_name?.trim() || row.username || 'Pengguna',
+        avatarUrl: profile?.profile_pict || null,
+      };
+    });
+  }
+
   async updateStatus(
     user: AuthUser,
     reportId: string,
     dto: UpdateReportStatusDto,
   ): Promise<ReportDetail> {
     const client = this.supabaseService.getAdminClient();
+    const { data: reportOwner, error: reportOwnerError } = await client
+      .from('report')
+      .select('reporter_id, title')
+      .eq('id', reportId)
+      .eq('is_delete', false)
+      .maybeSingle();
+    if (reportOwnerError) throw reportOwnerError;
+    if (!reportOwner) throw new NotFoundException('Laporan tidak ditemukan.');
+
     const { data: status, error: statusError } = await client
       .from('status')
       .select('id')
@@ -125,7 +208,8 @@ export class ReportDetailService {
     const reportQuery = client
       .from('report')
       .update(updatePayload)
-      .eq('id', reportId);
+      .eq('id', reportId)
+      .eq('is_delete', false);
     if (user.role !== 'administrator') {
       const schoolId = await this.schoolMembership.getSchoolId(user.id);
       reportQuery.eq('school_id', schoolId);
@@ -141,6 +225,18 @@ export class ReportDetailService {
       throw new NotFoundException('Laporan tidak ditemukan.');
     }
 
-    return toReportDetail(data as unknown as ReportDetailRow, false, false);
+    const updated = toReportDetail(
+      data as unknown as ReportDetailRow,
+      false,
+      false,
+    );
+    await this.notificationsService.notifyReportStatusChanged({
+      reportId,
+      reporterId: reportOwner.reporter_id as string,
+      actorId: user.id,
+      reportTitle: reportOwner.title as string,
+      statusName: dto.statusName,
+    });
+    return updated;
   }
 }

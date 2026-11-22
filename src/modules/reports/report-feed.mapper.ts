@@ -1,3 +1,5 @@
+import { calculatePriorityScore } from './priority-score';
+
 export const REPORT_STATUSES = [
   'waiting_verification',
   'in_review',
@@ -77,6 +79,7 @@ export type FeedReport = {
   votes: number;
   comments: number;
   recommendations: number;
+  priorityScore: number;
   votedByMe: boolean;
   recommendedByMe: boolean;
   note: {
@@ -91,6 +94,7 @@ export type VoteResult = {
   reportId: string;
   votes: number;
   votedByMe: boolean;
+  priorityScore: number;
 };
 
 function first<T>(value: Related<T>): T | null {
@@ -104,6 +108,9 @@ export function toFeedReport(
 ): FeedReport {
   const reporter = first(row.reporter);
   const profile = first(reporter?.profile);
+
+  const votes = first(row.reports_votes)?.count ?? 0;
+  const recommendations = first(row.recommendations)?.count ?? 0;
 
   return {
     id: row.id,
@@ -121,9 +128,10 @@ export function toFeedReport(
     verifiedBy: row.verified_by,
     rejectedBy: row.rejected_by,
     updatedBy: row.updated_by,
-    votes: first(row.reports_votes)?.count ?? 0,
+    votes,
     comments: first(row.reports_comments)?.count ?? 0,
-    recommendations: first(row.recommendations)?.count ?? 0,
+    recommendations,
+    priorityScore: calculatePriorityScore(votes, recommendations),
     votedByMe,
     recommendedByMe,
     note: (() => {

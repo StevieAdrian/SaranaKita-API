@@ -1,0 +1,62 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { AuthUser } from '../../common/interfaces/auth-user.interface';
+import { NotificationsService } from './notifications.service';
+import { RegisterDeviceTokenDto } from './dto/register-device-token.dto';
+
+@Controller('notifications')
+export class NotificationsController {
+  constructor(private readonly notificationsService: NotificationsService) {}
+
+  @Get()
+  list(
+    @CurrentUser() user: AuthUser,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+  ) {
+    return this.notificationsService.list(user, limit);
+  }
+
+  @Get('unread-count')
+  unreadCount(@CurrentUser() user: AuthUser) {
+    return this.notificationsService.unreadCount(user);
+  }
+
+  @Post('read-all')
+  readAll(@CurrentUser() user: AuthUser) {
+    return this.notificationsService.markAllRead(user);
+  }
+
+  @Post('devices/fcm-token')
+  registerDeviceToken(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: RegisterDeviceTokenDto,
+  ) {
+    return this.notificationsService.registerDeviceToken(user.id, dto.token);
+  }
+
+  @Post('devices/fcm-token/remove')
+  removeDeviceToken(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: RegisterDeviceTokenDto,
+  ) {
+    return this.notificationsService.removeDeviceToken(user.id, dto.token);
+  }
+
+  @Patch(':id/read')
+  markRead(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.notificationsService.markRead(user, id);
+  }
+}

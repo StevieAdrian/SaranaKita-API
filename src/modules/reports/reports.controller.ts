@@ -98,6 +98,17 @@ export class ReportsController {
     return this.reportsService.update(user, id, dto);
   }
 
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'staff', 'administrator')
+  remove(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reportsService.remove(user, id);
+  }
+
   //Report Detail
   @Patch(':id/status')
   @UseGuards(RolesGuard)
@@ -118,6 +129,23 @@ export class ReportsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.reportDetailService.findOne(user, id);
+  }
+
+  @Get(':id/votes')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'administrator', 'staff')
+  listVotes(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.reportDetailService.listVotes(user, id);
+  }
+
+  @Get(':id/recommendations')
+  @UseGuards(RolesGuard)
+  @Roles('siswa', 'guru', 'administrator', 'staff')
+  listRecommendations(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reportDetailService.listRecommendations(user, id);
   }
 
   //Report Comment

@@ -13,4 +13,8 @@ export default () => ({
     apiKey: process.env.CLOUDINARY_API_KEY,
     apiSecret: process.env.CLOUDINARY_API_SECRET,
   },
+  firebase: {
+    serviceAccount: process.env.FIREBASE_SERVICE_ACCOUNT,
+    serviceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+  },
 });

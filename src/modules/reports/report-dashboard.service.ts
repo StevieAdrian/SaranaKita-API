@@ -10,6 +10,7 @@ import {
   type FeedReportRow,
   type ReportStatus,
 } from './report-feed.mapper';
+import { compareFeedReports } from './report-feed.sort';
 
 type StatusRow = { id: string; status_name: string | null };
 type CategoryRow = { id: string; category_name: string | null };
@@ -64,7 +65,8 @@ export class ReportDashboardService {
     const countReports = () => {
       const query = client
         .from('report')
-        .select('id', { count: 'exact', head: true });
+        .select('id', { count: 'exact', head: true })
+        .eq('is_delete', false);
       return userSchool ? query.eq('school_id', userSchool.id) : query;
     };
     const [statusResult, categoryResult, totalResult, monthResult] =
@@ -135,8 +137,9 @@ export class ReportDashboardService {
     const urgentQuery = client
       .from('report')
       .select(DASHBOARD_REPORT_SELECT)
+      .eq('is_delete', false)
       .order('created_at', { ascending: false })
-      .limit(3)
+      .limit(500)
       .or(
         waitingIds.length
           ? `status_id.is.null,status_id.in.(${waitingIds.join(',')})`
@@ -156,9 +159,10 @@ export class ReportDashboardService {
       totalThisMonth: monthResult.count ?? 0,
       statusCounts,
       categories: categoryCounts,
-      urgentReports: ((urgentRows ?? []) as unknown as FeedReportRow[]).map(
-        (row) => toFeedReport(row, false),
-      ),
+      urgentReports: ((urgentRows ?? []) as unknown as FeedReportRow[])
+        .map((row) => toFeedReport(row, false))
+        .sort(compareFeedReports('highest_priority'))
+        .slice(0, 3),
     };
   }
 }
