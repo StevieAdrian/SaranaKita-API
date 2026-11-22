@@ -22,6 +22,12 @@ export function compareFeedReports(
         b.recommendations - a.recommendations ||
         b.votes - a.votes ||
         newestFirst(a, b);
+    case 'highest_priority':
+      return (a, b) =>
+        b.priorityScore - a.priorityScore ||
+        b.recommendations - a.recommendations ||
+        b.votes - a.votes ||
+        newestFirst(a, b);
     case 'latest':
     default:
       return newestFirst;

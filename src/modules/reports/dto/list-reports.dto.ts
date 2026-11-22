@@ -18,6 +18,7 @@ export const REPORT_SORTS = [
   'most_votes',
   'least_votes',
   'most_recommendations',
+  'highest_priority',
 ] as const;
 
 export type ReportSort = (typeof REPORT_SORTS)[number];
