@@ -1,5 +1,6 @@
 import { toUserRole, type UserRole } from '../../common/utils/resolve-role';
 import { toReportStatus, type ReportStatus } from './report-feed.mapper';
+import { calculatePriorityScore } from './priority-score';
 
 type Related<T> = T | T[] | null | undefined;
 
@@ -62,6 +63,7 @@ export type ReportDetail = {
   votes: number;
   comments: number;
   recommendations: number;
+  priorityScore: number;
   votedByMe: boolean;
   recommendedByMe: boolean;
   verifiedBy: string | null;
@@ -141,6 +143,9 @@ export function toReportDetail(
       }
     : null;
 
+  const votes = first(row.reports_votes)?.count ?? 0;
+  const recommendations = first(row.recommendations)?.count ?? 0;
+
   return {
     id: row.id,
     title: row.title,
@@ -160,9 +165,10 @@ export function toReportDetail(
       avatarUrl: profile?.profile_pict?.trim() || null,
     },
     createdAt: row.created_at,
-    votes: first(row.reports_votes)?.count ?? 0,
+    votes,
     comments: first(row.reports_comments)?.count ?? 0,
-    recommendations: first(row.recommendations)?.count ?? 0,
+    recommendations,
+    priorityScore: calculatePriorityScore(votes, recommendations),
     votedByMe,
     recommendedByMe,
     verifiedBy: row.verified_by,

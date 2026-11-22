@@ -22,6 +22,7 @@ import {
   type VoteResult,
 } from './report-feed.mapper';
 import { compareFeedReports, DB_SORTS } from './report-feed.sort';
+import { calculatePriorityScore } from './priority-score';
 
 const FEED_SELECT = [
   'id',
@@ -452,7 +453,7 @@ export class ReportFeedService {
     reportId: string,
   ): Promise<VoteResult> {
     const client = this.supabaseService.getAdminClient();
-    const [total, mine] = await Promise.all([
+    const [total, mine, recommendations] = await Promise.all([
       client
         .from('reports_votes')
         .select('id', { count: 'exact', head: true })
@@ -462,6 +463,10 @@ export class ReportFeedService {
         .select('id', { count: 'exact', head: true })
         .eq('report_id', reportId)
         .eq('user_id', userId),
+      client
+        .from('recommendations')
+        .select('id', { count: 'exact', head: true })
+        .eq('report_id', reportId),
     ]);
 
     if (total.error) {
@@ -470,11 +475,19 @@ export class ReportFeedService {
     if (mine.error) {
       throw mine.error;
     }
+    if (recommendations.error) {
+      throw recommendations.error;
+    }
 
+    const votes = total.count ?? 0;
     return {
       reportId,
-      votes: total.count ?? 0,
+      votes,
       votedByMe: (mine.count ?? 0) > 0,
+      priorityScore: calculatePriorityScore(
+        votes,
+        recommendations.count ?? 0,
+      ),
     };
   }
 
@@ -483,7 +496,7 @@ export class ReportFeedService {
     reportId: string,
   ): Promise<RecommendationResult> {
     const client = this.supabaseService.getAdminClient();
-    const [total, mine] = await Promise.all([
+    const [total, mine, votes] = await Promise.all([
       client
         .from('recommendations')
         .select('id', { count: 'exact', head: true })
@@ -493,14 +506,21 @@ export class ReportFeedService {
         .select('id', { count: 'exact', head: true })
         .eq('report_id', reportId)
         .eq('guru_id', userId),
+      client
+        .from('reports_votes')
+        .select('id', { count: 'exact', head: true })
+        .eq('report_id', reportId),
     ]);
 
     if (total.error) throw total.error;
     if (mine.error) throw mine.error;
+    if (votes.error) throw votes.error;
+    const recommendations = total.count ?? 0;
     return {
       reportId,
-      recommendations: total.count ?? 0,
+      recommendations,
       recommendedByMe: (mine.count ?? 0) > 0,
+      priorityScore: calculatePriorityScore(votes.count ?? 0, recommendations),
     };
   }
 }
@@ -509,4 +529,5 @@ export type RecommendationResult = {
   reportId: string;
   recommendations: number;
   recommendedByMe: boolean;
+  priorityScore: number;
 };

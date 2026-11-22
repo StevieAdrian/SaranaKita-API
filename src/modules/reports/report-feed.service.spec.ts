@@ -119,6 +119,7 @@ describe('report feed mapper', () => {
       votes: 3,
       comments: 1,
       recommendations: 0,
+      priorityScore: 3,
       votedByMe: true,
       recommendedByMe: false,
       verifiedBy: null,
